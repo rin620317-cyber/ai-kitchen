@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <title>AI Kitchen</title>
+  <meta name="description" content="AI（愛）で、家族のごはんを。買い物・在庫・献立・調理をまとめて。" />
+  <meta name="theme-color" content="#1B6E4E" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="AI Kitchen" />
+  <link rel="stylesheet" href="./css/styles.css" />
+</head>
+<body>
+  <div class="phone">
+    <div class="screen-wrap">
+      <div id="bgphoto"></div>
+      <div class="app" id="app">
+        <div class="status">
+          <span id="clock" class="num">21:40</span>
+          <span class="sig">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 14a8 8 0 0 1 16 0"/><path d="M8 14a4 4 0 0 1 8 0"/><circle cx="12" cy="16" r="1.4" fill="currentColor" stroke="none"/></svg>
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 9h3v9H4zM10 6h3v12h-3zM16 3h3v15h-3z"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="8" width="16" height="9" rx="2"/><rect x="5" y="10" width="10" height="5" rx="1" fill="currentColor"/><path d="M21 11v3"/></svg>
+          </span>
+        </div>
+        <div class="topbar">
+          <div class="brand">
+            <span class="logo"></span>
+            <div><b id="hhname">林家</b><small id="hhsub">自宅・家族5人</small></div>
+          </div>
+          <div class="sync"><span class="dot"></span>この端末</div>
+        </div>
+        <main id="view" class="view"></main>
+        <nav class="tabbar" id="tabbar"><div class="pill" id="pill"><i></i></div></nav>
+      </div>
+      <div id="overlay"></div>
+      <div id="sheetroot"></div>
+      <div id="toast" class="toast"></div>
+    </div>
+  </div>
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>

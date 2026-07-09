@@ -1,0 +1,11 @@
+# ローカル専用ツール設定（配信には不要）
+.claude/
+
+# OSが作る不要ファイル
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# エディタ
+.vscode/
+*.swp
