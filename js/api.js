@@ -73,9 +73,17 @@ const RECIPE_SCHEMA = {
           },
           toddler_note: { type: 'STRING' },
           senior_note: { type: 'STRING' },
+          components: {
+            type: 'ARRAY',
+            items: {
+              type: 'OBJECT',
+              properties: { role: { type: 'STRING' }, name: { type: 'STRING' } },
+              required: ['role', 'name']
+            }
+          },
           uses_stock: { type: 'ARRAY', items: { type: 'STRING' } }
         },
-        required: ['name', 'minutes', 'kcal', 'tag', 'reason', 'ingredients', 'steps', 'nutrition', 'toddler_note', 'senior_note', 'uses_stock']
+        required: ['name', 'minutes', 'kcal', 'tag', 'reason', 'components', 'ingredients', 'steps', 'nutrition', 'toddler_note', 'senior_note', 'uses_stock']
       }
     }
   },
@@ -84,8 +92,13 @@ const RECIPE_SCHEMA = {
 
 const SYSTEM = [
   'あなたは日本の家庭の献立を提案する管理栄養士アシスタントです。',
-  '与えられた「冷蔵庫の中身」と「常備品」で作れる夕食を提案します。',
+  '与えられた「冷蔵庫の中身」と「常備品」で作れる夕食を、一汁三菜で提案します。',
   'ルール:',
+  '・各提案は「一汁三菜」を基本とし、主食（ごはん等）＋汁物＋主菜＋副菜2品で構成する。',
+  '・componentsに各料理を {role, name} の形で列挙する（roleは 主食 / 汁物 / 主菜 / 副菜 のいずれか）。',
+  '・ingredients と steps は献立全体（すべての料理分）をまとめて記載する。手順は料理ごとに分かるよう簡潔に。',
+  '・平日で時短優先でも、即席の汁物や和える程度の簡単な副菜で一汁三菜を目指す。',
+  '・nutrition と kcal は献立全体（1人分の合計）の目安。',
   '・冷蔵庫の食材、特に期限が近いものを優先して使い切る。',
   '・常備品（調味料・米など）は常にある前提で自由に使ってよい。買い物には出さない。',
   '・苦手食材は使わないか、代替・別添えにする。',
@@ -173,6 +186,10 @@ export const SAMPLE_RECIPES = [
   {
     name: '鶏もも肉の照り焼き', minutes: 30, kcal: 620, tag: '在庫で作れる',
     reason: '冷蔵庫の鶏もも肉とほうれん草・キャベツで作れます。',
+    components: [
+      { role: '主食', name: 'ごはん' }, { role: '汁物', name: 'キャベツの味噌汁' },
+      { role: '主菜', name: '鶏もも肉の照り焼き' }, { role: '副菜', name: 'ほうれん草の胡麻和え' }
+    ],
     ingredients: [
       { name: '鶏もも肉', amount: '3枚' }, { name: '醤油・みりん・酒', amount: '各大さじ3' },
       { name: '砂糖', amount: '大さじ1' }, { name: 'ほうれん草', amount: '1束' }, { name: 'キャベツ', amount: '1/4個' }
@@ -189,6 +206,10 @@ export const SAMPLE_RECIPES = [
   {
     name: '豚こまと玉ねぎの生姜焼き', minutes: 20, kcal: 540, tag: '期限が近い豚こまを使い切り',
     reason: '明日までの豚こま肉を優先。玉ねぎは常備品から。',
+    components: [
+      { role: '主食', name: 'ごはん' }, { role: '汁物', name: '豆腐とわかめの味噌汁' },
+      { role: '主菜', name: '豚こまと玉ねぎの生姜焼き' }, { role: '副菜', name: 'キャベツの浅漬け' }
+    ],
     ingredients: [
       { name: '豚こま肉', amount: '300g' }, { name: '玉ねぎ', amount: '1個' },
       { name: '生姜・醤油・みりん', amount: '適量' }
@@ -200,6 +221,10 @@ export const SAMPLE_RECIPES = [
   {
     name: '鮭と野菜のホイル焼き', minutes: 25, kcal: 410, tag: '野菜たっぷり・減塩',
     reason: '冷凍の鮭とキャベツで。蒸し焼きでやわらかく減塩。',
+    components: [
+      { role: '主食', name: 'ごはん' }, { role: '汁物', name: '玉ねぎの和風スープ' },
+      { role: '主菜', name: '鮭と野菜のホイル焼き' }, { role: '副菜', name: 'ほうれん草のおひたし' }
+    ],
     ingredients: [
       { name: '鮭', amount: '4切れ' }, { name: 'キャベツ', amount: '1/4個' },
       { name: '玉ねぎ', amount: '1/2個' }, { name: 'バター・塩', amount: '少々' }
@@ -211,6 +236,10 @@ export const SAMPLE_RECIPES = [
   {
     name: '親子丼', minutes: 25, kcal: 680, tag: '食べ盛りも満足',
     reason: '鶏もも肉と卵で。ごはんが進む定番。',
+    components: [
+      { role: '主食', name: '親子丼' }, { role: '汁物', name: 'なめこの味噌汁' },
+      { role: '副菜', name: '小松菜のおひたし' }, { role: '副菜', name: '冷奴' }
+    ],
     ingredients: [
       { name: '鶏もも肉', amount: '2枚' }, { name: '卵', amount: '5個' },
       { name: '玉ねぎ', amount: '1個' }, { name: '醤油・みりん・だし', amount: '適量' }

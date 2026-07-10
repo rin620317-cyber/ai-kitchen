@@ -170,6 +170,7 @@ function menuScreen() {
     '<span style="color:var(--faint)">' + ic('right') + '</span></div>' +
     '<div class="sub num" style="margin:3px 0 8px">' + r.minutes + '分 ・ ' + store.servingCount() + '人分 ・ ' + r.kcal + 'kcal</div>' +
     '<div style="display:flex;gap:5px;flex-wrap:wrap"><span class="chip ' + tagTone(r) + '">' + esc(r.tag) + '</span>' +
+    ((r.components && r.components.length >= 3) ? '<span class="chip c-line">一汁三菜</span>' : '') +
     (r.toddler_note ? '<span class="chip c-rose">取り分け</span>' : '') + '</div></div></div>'
   ).join('');
   return '<div class="fade">' +
@@ -241,6 +242,12 @@ function recipeView(r) {
     '<div class="sub" style="margin:6px 2px 4px">' + esc(r.reason || '') + '</div>' +
     '<div style="display:flex;gap:14px;margin:8px 0 16px" class="sub num">' +
     '<span>' + ic('clock') + ' 約' + r.minutes + '分</span><span>' + ic('users') + ' ' + store.servingCount() + '人分</span></div>' +
+    ((r.components && r.components.length)
+      ? '<div class="sub" style="margin:4px 2px 8px">献立の内容（一汁三菜）</div>' +
+        '<div class="card" style="padding:2px 14px;margin-bottom:16px">' +
+        r.components.map(c => '<div class="listrow"><span class="chip c-green" style="min-width:46px;justify-content:center">' + esc(c.role) + '</span>' +
+          '<span style="flex:1;font-size:14px">' + esc(c.name) + '</span></div>').join('') + '</div>'
+      : '') +
     '<div class="sub" style="margin-bottom:8px">栄養（1人分・ざっくり）</div>' +
     '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">' +
     nchip('エネルギー', r.kcal, 'kcal') + nchip('たんぱく質', n.protein_g, 'g') + nchip('脂質', n.fat_g, 'g') +

@@ -1,6 +1,6 @@
 // Service Worker：ネット優先。オンライン時は常に最新を取得し（更新が普通の再読込で反映）、
 // オフライン時のみキャッシュから起動する。献立AIへの通信は素通し。
-const CACHE = 'ai-kitchen-1.3.0';
+const CACHE = 'ai-kitchen-1.4.0';
 const SHELL = [
   './',
   './index.html',
