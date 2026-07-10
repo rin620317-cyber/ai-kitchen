@@ -95,6 +95,8 @@ export function switchHousehold(id) {
   save();
 }
 
+export function updateHousehold(patch) { Object.assign(hh(), patch); save(); }
+
 export function setApiKey(k) { state.apiKey = (k || '').trim(); save(); }
 export function apiKey() { return state.apiKey; }
 

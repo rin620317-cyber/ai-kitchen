@@ -326,6 +326,12 @@ function settingsView() {
   const hasKey = !!store.apiKey();
   return '<div class="ohead"><button class="backbtn" onclick="APP.back()">' + ic('left') + '</button><b style="font-size:15px">' + esc(h.name) + ' の設定</b></div>' +
     '<div class="obody">' +
+    '<div class="sub" style="margin:0 2px 8px">世帯の名前</div>' +
+    '<div class="card tap" style="display:flex;align-items:center;gap:12px;margin-bottom:20px" onclick="APP.openRename()">' +
+    '<span class="avatar a-green" style="width:38px;height:38px;font-size:14px;flex:0 0 auto">' + esc(h.name.slice(0, 1)) + '</span>' +
+    '<div style="flex:1;min-width:0"><b style="font-size:15px">' + esc(h.name) + '</b>' +
+    '<div class="sub">' + esc(h.tag || '') + '</div></div>' +
+    '<span class="chip c-line">' + ic('edit') + '編集</span></div>' +
     '<div class="sub" style="margin:0 2px 10px">世帯モード</div>' +
     modes.map(m => {
       const on = h.mode === m[0];
@@ -581,6 +587,16 @@ function rcptBody() {
     '<button class="btn ghost" style="margin-top:10px" onclick="APP.closeSheet()">やめる</button>';
 }
 
+function renameSheet() {
+  const h = store.hh();
+  return '<div style="padding:0 2px"><b style="font-size:18px">世帯の名前</b>' +
+    '<div class="sub" style="margin:4px 0 14px">画面の上部に表示される名前です。好きに変えられます。</div></div>' +
+    '<label class="fl">名前</label><input id="hh-name" class="inp" value="' + esc(h.name) + '" placeholder="例：林家／わが家" />' +
+    '<label class="fl">ひとこと（自宅・実家など・任意）</label><input id="hh-tag" class="inp" value="' + esc(h.tag || '') + '" placeholder="例：自宅" />' +
+    '<button class="btn primary" style="margin-top:16px" onclick="APP.saveHousehold()">' + ic('check') + '保存</button>' +
+    '<button class="btn ghost" style="margin-top:10px" onclick="APP.closeSheet()">やめる</button>';
+}
+
 // ---------- ルーター ----------
 const TABS = ['home', 'stock', 'menu', 'shop'];
 const SCREENS = { home: homeScreen, stock: stockScreen, menu: menuScreen, shop: shopScreen };
@@ -781,6 +797,15 @@ const APP = {
   setMode(m) { store.setMode(m); openOverlay(settingsView(), true); render(); },
   guest(d) { store.setGuests(d); openOverlay(settingsView(), true); render(); },
   togglePolicy(k) { store.togglePolicy(k); openOverlay(settingsView(), true); },
+  openRename() { openSheet(renameSheet()); },
+  saveHousehold() {
+    const name = q('hh-name').value.trim(); if (!name) { toast('名前を入れてください'); return; }
+    store.updateHousehold({ name: name, tag: q('hh-tag').value.trim() });
+    closeSheet();
+    if (ovEl.firstChild) openOverlay(settingsView(), true);
+    render();
+    toast('世帯名を変更しました');
+  },
 
   // 家族編集
   openMember(id) { const m = id ? store.hh().members.find(x => x.id === id) : null; openSheet(memberSheet(m)); },
