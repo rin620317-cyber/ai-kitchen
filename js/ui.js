@@ -103,6 +103,10 @@ function homeScreen() {
     '<span class="chip hero-chip">約' + r.minutes + '分</span>' + modeChip +
     (r.toddler_note ? '<span class="chip hero-chip">取り分けOK</span>' : '') +
     '</div></div></div>' +
+    (gen.error
+      ? '<div class="card danger-card" style="margin-top:12px" onclick="APP.' + (gen.error.indexOf('APIキー') >= 0 ? 'openApiKey()' : 'generate()') + '">' + ic('alert') +
+        '<span style="font-size:12.5px;font-weight:600">' + esc(gen.error) + (gen.error.indexOf('APIキー') >= 0 ? '（タップで設定）' : '（タップで再試行）') + '</span></div>'
+      : '') +
     '<div class="card" style="margin-top:14px"><div class="row"><b style="font-size:14px">今日の夕食の栄養（1人分）</b>' +
     '<span class="sub">目安</span></div>' +
     '<div style="display:flex;justify-content:space-around;margin-top:12px" id="rings">' +
@@ -326,7 +330,8 @@ function step(n, t) {
 function settingsView() {
   const h = store.hh();
   const modes = [['standard', '標準', 'ふつうの分量・表示'], ['growing', '食べ盛り', '育ち盛りに合わせて分量多め'], ['senior', 'シニア（あっさり表示）', '文字を大きく、薄味・やわらかめで提案']];
-  const hasKey = !!store.apiKey();
+  const hasKey = !!store.effectiveApiKey();
+  const sharedKey = store.usingSharedKey();
   return '<div class="ohead"><button class="backbtn" onclick="APP.back()">' + ic('left') + '</button><b style="font-size:15px">' + esc(h.name) + ' の設定</b></div>' +
     '<div class="obody">' +
     '<div class="sub" style="margin:0 2px 8px">世帯の名前</div>' +
@@ -365,8 +370,8 @@ function settingsView() {
     '<div class="card tap" style="display:flex;align-items:center;gap:12px" onclick="APP.openApiKey()">' +
     '<span style="color:var(--green)">' + ic('key') + '</span>' +
     '<div style="flex:1"><b style="font-size:14.5px">APIキー</b>' +
-    '<div class="sub">' + (hasKey ? '設定済み（AI提案が使えます）' : '未設定（見本献立で動作中）') + '</div></div>' +
-    '<span class="chip ' + (hasKey ? 'c-green' : 'c-line') + '">' + (hasKey ? '有効' : '設定') + '</span></div>' +
+    '<div class="sub">' + (hasKey ? (sharedKey ? '家族の共有キーで利用中' : '設定済み（AI提案が使えます）') : '未設定（見本献立で動作中）') + '</div></div>' +
+    '<span class="chip ' + (hasKey ? 'c-green' : 'c-line') + '">' + (hasKey ? (sharedKey ? '共有' : '有効') : '設定') + '</span></div>' +
     '<div class="sub" style="margin:18px 2px 8px">見た目</div>' +
     '<div class="card tap" style="display:flex;align-items:center;gap:12px" onclick="APP.openBg()">' +
     (store.bgPhoto()
@@ -561,8 +566,14 @@ function apiKeySheet() {
           '<div class="sub num">末尾 ••••' + esc(store.apiKey().slice(-4)) + '（入れ直し不要です）</div></div></div>' +
         '<input id="key-inp" class="inp" type="password" placeholder="変更する場合だけ入力" value="" />'
       : '<input id="key-inp" class="inp" type="password" placeholder="AIza..." value="" />') +
+    (has
+      ? '<div class="card" style="margin-top:12px;padding:2px 14px"><div class="listrow" onclick="APP.toggleShareKey()">' +
+        '<div style="flex:1"><b style="font-size:14px">このキーを家族全員で使う</b>' +
+        '<div class="sub" style="margin-top:2px">' + (sync.isOn() ? '共有中の他の端末が、キー未設定でもAIを使えます' : '先に「設定→家族と共有」をオンにすると全端末へ反映') + '</div></div>' +
+        '<span class="switch' + (store.keyIsShared() ? ' on' : '') + '"><span class="knob"></span></span></div></div>'
+      : '') +
     '<div class="card soft" style="margin-top:12px;padding:12px 14px;font-size:12px;color:var(--muted);line-height:1.6">' +
-    'キーは <b>aistudio.google.com</b>（Google AI Studio）で無料発行できます。<br>キーは<b>この端末の中だけ</b>に保存されます。人に配る場合は<b>各自が自分の無料キー</b>を入れる形。将来アプリを販売する場合は、キーをサーバー側に置く方式に切り替えます。</div>' +
+    'キーは <b>aistudio.google.com</b>（Google AI Studio）で無料発行できます。<br>キーは<b>この端末の中だけ</b>に保存されます（家族共有をオンにした場合のみ、家族データに載って共有）。将来アプリを販売する場合は、キーをサーバー側に置く方式に切り替えます。</div>' +
     '<button class="btn primary" style="margin-top:14px" onclick="APP.saveApiKey()">' + ic('check') + '保存する</button>' +
     (has ? '<button class="btn ghost" style="margin-top:10px" onclick="APP.clearApiKey()">キーを削除</button>' : '') +
     '<button class="btn ghost" style="margin-top:10px" onclick="APP.closeSheet()">とじる</button>';
@@ -977,6 +988,15 @@ const APP = {
     render(); toast('キーを保存しました');
   },
   clearApiKey() { store.setApiKey(''); closeSheet(); if (ovEl.firstChild) openOverlay(settingsView(), true); render(); toast('キーを削除しました'); },
+  toggleShareKey() {
+    const willShare = !store.keyIsShared();
+    if (willShare && !store.apiKey()) { toast('先にこの端末のキーを保存してください'); return; }
+    store.setShareKey(willShare);
+    openSheet(apiKeySheet());
+    if (ovEl.firstChild && overlayIsSettings) openOverlay(settingsView(), true);
+    render();
+    toast(willShare ? '家族全員でこのキーを使う設定にしました' : '家族共有をオフにしました');
+  },
   pickModel(btn) { store.setModel(btn.dataset.v); document.querySelectorAll('#key-model button').forEach(b => b.classList.remove('on')); btn.classList.add('on'); },
 
   // 背景写真

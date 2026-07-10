@@ -151,6 +151,18 @@ export function updateHousehold(patch) { Object.assign(hh(), patch); save(); }
 export function setApiKey(k) { state.apiKey = (k || '').trim(); save(); }
 export function apiKey() { return state.apiKey; }
 
+// AIキーの家族共有：sharedApiKey は同期データに載る（端末固有ではない）ので、
+// 親機で1つ入れて共有すれば、他の端末はキー未設定でもAIが動く。
+// 実際にAIに使うキーは「自分のキー優先、無ければ家族の共有キー」。
+export function sharedApiKey() { return (state.sharedApiKey || '').trim(); }
+export function effectiveApiKey() { return (state.apiKey || '').trim() || sharedApiKey(); }
+export function keyIsShared() { return !!sharedApiKey(); }
+export function usingSharedKey() { return !((state.apiKey || '').trim()) && keyIsShared(); }
+export function setShareKey(on) {
+  state.sharedApiKey = on ? (state.apiKey || '').trim() : '';
+  save();
+}
+
 export function model() { const m = state.model; return (m === 'flash' || m === 'flash-lite') ? m : 'flash-lite'; }
 export function setModel(m) { state.model = m; save(); }
 

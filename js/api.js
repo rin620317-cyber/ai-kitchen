@@ -1,7 +1,7 @@
 // 献立AI。Google Gemini API に在庫・常備品・家族構成を渡し、
 // 栄養・取り分け・時短を考慮した献立をJSONで受け取る。
 // キー未設定・オフライン時はサンプル献立で全画面が動く。
-import { apiKey, model, servingCount, toddlerPresent, dislikes } from './store.js';
+import { effectiveApiKey, model, servingCount, toddlerPresent, dislikes } from './store.js';
 import { daysUntil } from './util.js';
 
 // 最安クラス（無料枠あり）の Flash-Lite を既定に。高品質側は Flash。
@@ -124,7 +124,7 @@ async function callGemini(modelId, body) {
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + modelId + ':generateContent';
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey() },
+    headers: { 'content-type': 'application/json', 'x-goog-api-key': effectiveApiKey() },
     body: JSON.stringify(body)
   });
   if (!res.ok) {
@@ -161,7 +161,7 @@ async function runWithRetry(body, extract) {
 }
 
 export async function generateRecipes(context, count) {
-  const key = apiKey();
+  const key = effectiveApiKey();
   if (!key) throw new Error('NO_KEY');
   const body = {
     system_instruction: { parts: [{ text: SYSTEM }] },
@@ -216,7 +216,7 @@ const RECEIPT_SYSTEM = [
 ].join('\n');
 
 export async function extractReceiptItems(imageDataUrl) {
-  const key = apiKey();
+  const key = effectiveApiKey();
   if (!key) throw new Error('NO_KEY');
   const m = /^data:(image\/[a-zA-Z+]+);base64,(.+)$/.exec(imageDataUrl || '');
   if (!m) throw new Error('画像を読み込めませんでした');
