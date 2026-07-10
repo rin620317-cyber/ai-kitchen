@@ -4,6 +4,7 @@ import { todayLabel, clockLabel, ageLabel, birthLabel, expiryInfo, daysUntil, es
 import * as store from './store.js';
 import { buildContext, generateRecipes, extractReceiptItems, SAMPLE_RECIPES } from './api.js';
 import { APP_VERSION } from './version.js';
+import * as sync from './sync.js';
 
 let curTab = 'home';
 let segIndex = 0;
@@ -14,6 +15,8 @@ let gen = { loading: false, error: '' };
 let nutriDemo = 'male';  // 栄養バーの対象（男性/女性/子ども/シニア）
 let rcptLoading = false;  // レシート読み取り中
 let rcptCtx = null;       // レシート抽出結果（確認シート用）
+let overlayIsSettings = false;  // 設定オーバーレイ表示中か（同期反映時の再描画用）
+let sheetIsSync = false;        // 共有シート表示中か
 const reduce = window.matchMedia('(prefers-reduced-motion:reduce)').matches;
 
 const TONE_AV = { green: 'a-green', rose: 'a-rose', amber: 'a-amber' };
@@ -378,8 +381,12 @@ function settingsView() {
     '<div style="flex:1"><b style="font-size:14.5px">バックアップ・復元</b>' +
     '<div class="sub">保存する／別の端末やURLへ移す</div></div>' +
     '<span style="color:var(--faint)">' + ic('right') + '</span></div>' +
-    '<div class="card" style="margin-top:16px;background:var(--green-soft);border:none;color:var(--green-deep);font-size:12.5px;line-height:1.6;font-weight:500">' +
-    'この世帯は将来、共有メンバーのスマホと連動できます。ご両親を招待すれば実家の在庫や献立も一緒に管理できます（同期は次の開発ステップ）。</div>' +
+    '<div class="sub" style="margin:18px 2px 8px">家族と共有</div>' +
+    '<div class="card tap" style="display:flex;align-items:center;gap:12px" onclick="APP.openSync()">' +
+    '<span style="color:var(--green)">' + ic('sync') + '</span>' +
+    '<div style="flex:1"><b style="font-size:14.5px">家族でリアルタイム連動</b>' +
+    '<div class="sub">' + (sync.isOn() ? '共有中（コード ' + esc(sync.currentCode()) + '）' : '夫婦・実家のスマホと在庫や献立を常に同じに') + '</div></div>' +
+    '<span class="chip ' + (sync.isOn() ? 'c-green' : 'c-line') + '">' + (sync.isOn() ? '共有中' : '設定') + '</span></div>' +
     '<div style="text-align:center;color:var(--faint);font-size:11px;margin:18px 0 4px" class="num">AI Kitchen　v' + APP_VERSION + '</div>' +
     '</div>';
 }
@@ -403,6 +410,7 @@ function closeOverlay() {
   setTimeout(() => { ovEl.innerHTML = ''; }, reduce ? 0 : 380);
 }
 function openSheet(html) {
+  sheetIsSync = false;
   sheetEl.innerHTML = '<div class="scrim" onclick="APP.closeSheet()"></div><div class="sheet"><div class="grab"></div>' + html + '</div>';
   const sc = sheetEl.querySelector('.scrim'), sh = sheetEl.querySelector('.sheet');
   requestAnimationFrame(() => requestAnimationFrame(() => { sc.classList.add('in'); sh.classList.add('in'); }));
@@ -618,6 +626,34 @@ function dataSheet() {
     '<button class="btn ghost" style="margin-top:10px" onclick="APP.closeSheet()">とじる</button>';
 }
 
+function syncSheet() {
+  const st = sync.getStatus();
+  if (st === 'on') {
+    const code = sync.currentCode() || '';
+    return '<div style="padding:0 2px"><b style="font-size:18px">家族と共有中</b>' +
+      '<div class="sub" style="margin:4px 0 14px">この家族コードを、連動したいスマホの「コードで参加」に入れてください。以後、在庫・献立・買い物・家族がリアルタイムで同じになります。</div></div>' +
+      '<div class="card" style="text-align:center;padding:18px 16px">' +
+      '<div class="sub" style="margin-bottom:6px">家族コード</div>' +
+      '<div class="num" style="font-size:30px;font-weight:800;letter-spacing:.22em;color:var(--green-deep)">' + esc(code) + '</div></div>' +
+      '<button class="btn primary" style="margin-top:12px" onclick="APP.copyCode()">' + ic('copy') + 'コードをコピー</button>' +
+      '<div class="card soft" style="margin-top:12px;padding:12px 14px;font-size:12px;color:var(--muted);line-height:1.6">' +
+      'APIキー・背景写真・表示中の世帯は端末ごとの設定として共有されません（それ以外＝在庫や献立などは全員で同じになります）。</div>' +
+      '<button class="btn ghost" style="margin-top:14px;color:var(--rose,#c2506a)" onclick="APP.stopSync()">' + ic('x') + '共有を解除する（この端末）</button>' +
+      '<button class="btn ghost" style="margin-top:10px" onclick="APP.closeSheet()">とじる</button>';
+  }
+  const busy = st === 'connecting';
+  return '<div style="padding:0 2px"><b style="font-size:18px">家族でリアルタイム連動</b>' +
+    '<div class="sub" style="margin:4px 0 14px">夫婦や実家のスマホと、在庫・献立・買い物・家族を常に同じに保ちます。片方で足りない物を買い物に足せば、もう片方にもすぐ反映されます。</div></div>' +
+    '<button class="btn primary" ' + (busy ? 'disabled' : '') + ' onclick="APP.createShare()">' + ic('sync') + (busy ? '接続中…' : '新しく共有を始める（コードを発行）') + '</button>' +
+    '<div style="text-align:center;color:var(--faint);font-size:12px;margin:14px 0 6px">— または —</div>' +
+    '<label class="fl">家族から共有されたコードで参加</label>' +
+    '<input id="sync-code" class="inp num" style="text-transform:uppercase;letter-spacing:.14em;font-size:18px;text-align:center" maxlength="12" placeholder="例）ABCD28" />' +
+    '<button class="btn ghost" style="margin-top:10px" ' + (busy ? 'disabled' : '') + ' onclick="APP.joinShare()">' + ic('link') + 'このコードで参加</button>' +
+    '<div class="card soft" style="margin-top:12px;padding:12px 14px;font-size:12px;color:var(--muted);line-height:1.6">' +
+    '「参加」すると、この端末のデータは共有先の内容に置き換わります（APIキーと背景写真は各端末のまま）。まず親機で「共有を始める」→出たコードを子機で参加、が簡単です。</div>' +
+    '<button class="btn ghost" style="margin-top:10px" onclick="APP.closeSheet()">とじる</button>';
+}
+
 // ---------- ルーター ----------
 const TABS = ['home', 'stock', 'menu', 'shop'];
 const SCREENS = { home: homeScreen, stock: stockScreen, menu: menuScreen, shop: shopScreen };
@@ -659,6 +695,14 @@ function refreshBrand() {
     (h.mode === 'senior' ? '・あっさり表示' : h.mode === 'growing' ? '・食べ盛り' : '');
 }
 
+// 同期：リモート反映・状態変化のときに開いている画面を最新に描き直す。
+function refreshSyncUI() {
+  if (ovEl && ovEl.firstChild && overlayIsSettings) openOverlay(settingsView(), true);
+  if (sheetEl && sheetEl.querySelector('.sheet') && sheetIsSync) { openSheet(syncSheet()); sheetIsSync = true; }
+}
+function onSyncRemote() { render(); refreshSyncUI(); }
+function onSyncStatus() { refreshSyncUI(); }
+
 // ---------- ハンドラ ----------
 const APP = {
   go(tab) { curTab = tab; render(); },
@@ -666,12 +710,13 @@ const APP = {
 
   openHousehold() { openSheet(householdSheet()); },
   switchHH(id) { store.switchHousehold(id); curRecipes = []; gen.error = ''; curTab = 'home'; closeSheet(); render(); },
-  openSettings() { closeSheet(); openOverlay(settingsView()); },
-  back() { closeOverlay(); },
+  openSettings() { closeSheet(); overlayIsSettings = true; openOverlay(settingsView()); },
+  back() { overlayIsSettings = false; closeOverlay(); },
   closeSheet() { closeSheet(); },
   toast(m) { toast(m); },
 
   openRecipe(i) {
+    overlayIsSettings = false;
     curRecipe = (i === -1) ? todaysDinner() : (curRecipes[i] || SAMPLE_RECIPES[i] || SAMPLE_RECIPES[0]);
     openOverlay(recipeView(curRecipe));
   },
@@ -870,6 +915,40 @@ const APP = {
     }
   },
 
+  // 家族と共有（リアルタイム同期）
+  openSync() { if (sheetEl.querySelector('.sheet')) closeSheet(); openSheet(syncSheet()); sheetIsSync = true; },
+  async createShare() {
+    try {
+      const code = await sync.createShare();
+      openSheet(syncSheet()); sheetIsSync = true;
+      if (ovEl.firstChild && overlayIsSettings) openOverlay(settingsView(), true);
+      toast('共有を開始しました（コード ' + code + '）');
+    } catch (e) { toast('共有を開始できませんでした（通信をご確認ください）'); }
+  },
+  async joinShare() {
+    const v = (q('sync-code') || {}).value || '';
+    if (!v.trim()) { toast('コードを入れてください'); return; }
+    try {
+      await sync.joinShare(v);
+      openSheet(syncSheet()); sheetIsSync = true;
+      segIndex = 0; curTab = 'home'; curRecipes = []; gen.error = ''; render();
+      if (ovEl.firstChild && overlayIsSettings) openOverlay(settingsView(), true);
+      toast('参加しました。データを同期しました');
+    } catch (e) { toast('参加できませんでした（コードか通信をご確認ください）'); }
+  },
+  stopSync() {
+    sync.stopShare();
+    closeSheet();
+    if (ovEl.firstChild && overlayIsSettings) openOverlay(settingsView(), true);
+    toast('共有を解除しました');
+  },
+  copyCode() {
+    const c = sync.currentCode() || '';
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(c).then(() => toast('コードをコピーしました')).catch(() => toast('コピーできませんでした'));
+    } else { toast('この環境ではコピーできません'); }
+  },
+
   // 家族編集
   openMember(id) { const m = id ? store.hh().members.find(x => x.id === id) : null; openSheet(memberSheet(m)); },
   saveMember(id) {
@@ -959,5 +1038,6 @@ export function init() {
   brand.onclick = () => APP.openHousehold();
 
   window.APP = APP;
+  sync.initSync({ onRemoteChange: onSyncRemote, onStatusChange: onSyncStatus });
   render();
 }

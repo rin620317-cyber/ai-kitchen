@@ -71,6 +71,40 @@ function seed() {
 
 let state = null;
 
+// 同期用フック。保存のたびに呼ばれる（sync.js が購読）。suppress中（リモート反映中）は呼ばない。
+let onSave = null;
+let suppress = false;
+export function setOnSave(fn) { onSave = fn; }
+
+// 端末ごとに固有で、家族間で共有しない項目（同期から除外し、リモート反映時も自分の値を保つ）。
+const LOCAL_TOP = ['apiKey', 'model', 'currentHouseholdId'];
+const LOCAL_HH = ['bgPhoto', 'bgStrength'];
+
+// 同期に載せるデータ（端末固有の項目を除いたもの）。
+export function syncPayload() {
+  const clone = JSON.parse(JSON.stringify(state));
+  LOCAL_TOP.forEach(k => delete clone[k]);
+  (clone.households || []).forEach(h => LOCAL_HH.forEach(k => delete h[k]));
+  return clone;
+}
+
+// リモートから受け取ったデータを反映（端末固有の項目は自分の値を維持）。成功でtrue。
+export function applySync(remote) {
+  if (!remote || !Array.isArray(remote.households) || !remote.households.length) return false;
+  suppress = true;
+  try {
+    const keepTop = {}; LOCAL_TOP.forEach(k => keepTop[k] = state[k]);
+    const keepHH = {}; state.households.forEach(h => { keepHH[h.id] = {}; LOCAL_HH.forEach(k => keepHH[h.id][k] = h[k]); });
+    const next = JSON.parse(JSON.stringify(remote));
+    LOCAL_TOP.forEach(k => { if (keepTop[k] !== undefined) next[k] = keepTop[k]; });
+    (next.households || []).forEach(h => { const kh = keepHH[h.id]; if (kh) LOCAL_HH.forEach(k => { if (kh[k] !== undefined) h[k] = kh[k]; }); });
+    if (!next.households.some(h => h.id === next.currentHouseholdId)) next.currentHouseholdId = next.households[0].id;
+    state = next;
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* 容量超過等は無視 */ }
+  } finally { suppress = false; }
+  return true;
+}
+
 export function load() {
   try {
     const raw = localStorage.getItem(KEY);
@@ -82,6 +116,7 @@ export function load() {
 
 export function save() {
   try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* 容量超過等は無視 */ }
+  if (onSave && !suppress) { try { onSave(); } catch (e) { /* 同期側の失敗は無視 */ } }
 }
 
 export function getState() { return state; }
