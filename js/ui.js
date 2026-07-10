@@ -74,16 +74,32 @@ function nutriBlock(r) {
 }
 
 // ---------- ホーム ----------
-function todaysDinner() {
+function dinnerCandidates() {
   const h = store.hh();
-  if (h.savedRecipes && h.savedRecipes.length) return h.savedRecipes[0];
-  return SAMPLE_RECIPES[0];
+  return (h.savedRecipes && h.savedRecipes.length) ? h.savedRecipes : SAMPLE_RECIPES;
 }
+function todaysDinner() { return dinnerCandidates()[0]; }
 
 function homeScreen() {
   const h = store.hh();
   if (h.mode === 'senior') return seniorHome();
-  const r = todaysDinner();
+  const cands = dinnerCandidates();
+  const r = cands[0];
+  const others = cands.slice(1, 3);
+  const othersHtml = others.length
+    ? '<div class="row" style="margin:18px 2px 8px"><b style="font-size:14px">ほかの候補</b>' +
+      '<span class="sub tap" onclick="APP.go(\'menu\')">もっと見る ' + '</span></div>' +
+      others.map((o, k) => {
+        const i = k + 1;
+        return '<div class="card tap" style="padding:11px;display:flex;gap:11px;margin-bottom:9px;align-items:center" onclick="APP.openDinner(' + i + ')">' +
+          '<div class="thumb g' + ((i % 4) + 1) + '" style="width:46px;height:46px;flex:0 0 auto"></div>' +
+          '<div style="flex:1;min-width:0"><b style="font-size:14.5px">' + esc(o.name) + '</b>' +
+          '<div class="sub num" style="margin-top:2px">' + o.minutes + '分 ・ ' + o.kcal + 'kcal' +
+          ((o.components && o.components.length >= 3) ? ' ・ 一汁三菜' : '') + '</div></div>' +
+          (o.toddler_note ? '<span class="chip c-rose">取り分け</span>' : '') +
+          '<span style="color:var(--faint)">' + ic('right') + '</span></div>';
+      }).join('')
+    : '';
   const alerts = h.fridge.filter(f => f.expiry && daysUntil(f.expiry) <= 1)
     .sort((a, b) => daysUntil(a.expiry) - daysUntil(b.expiry));
   const proteinPct = Math.round(r.nutrition.protein_g / 30 * 100);
@@ -114,6 +130,7 @@ function homeScreen() {
     ring(proteinPct, '#E3A62E', 'たんぱく質', r.nutrition.protein_g + 'g') +
     ring(vegPct, '#E0812A', '野菜', r.nutrition.veg_g + 'g') +
     ring(enePct, '#D8552E', 'エネルギー', r.kcal + 'kcal') + '</div></div>' +
+    othersHtml +
     (alerts.length
       ? '<div class="card danger-card" style="margin-top:12px" onclick="APP.go(\'stock\')">' + ic('alert') +
       '<span style="font-size:12.5px;font-weight:600">期限が近い：' +
@@ -815,6 +832,12 @@ const APP = {
   openRecipe(i) {
     overlayIsSettings = false;
     curRecipe = (i === -1) ? todaysDinner() : (curRecipes[i] || SAMPLE_RECIPES[i] || SAMPLE_RECIPES[0]);
+    openOverlay(recipeView(curRecipe));
+  },
+  openDinner(i) {
+    overlayIsSettings = false;
+    const cands = dinnerCandidates();
+    curRecipe = cands[i] || cands[0];
     openOverlay(recipeView(curRecipe));
   },
   nutriTab(demo) { nutriDemo = demo; const el = q('nutri-block'); if (el && curRecipe) el.innerHTML = nutriBlock(curRecipe); },
