@@ -78,7 +78,7 @@ export function setOnSave(fn) { onSave = fn; }
 
 // 端末ごとに固有で、家族間で共有しない項目（同期から除外し、リモート反映時も自分の値を保つ）。
 const LOCAL_TOP = ['apiKey', 'model', 'currentHouseholdId'];
-const LOCAL_HH = ['bgPhoto', 'bgStrength'];
+const LOCAL_HH = ['bgPhoto', 'bgStrength', 'headerPhoto', 'headerStrength'];
 
 // 同期に載せるデータ（端末固有の項目を除いたもの）。
 export function syncPayload() {
@@ -171,6 +171,12 @@ export function bgPhoto() { return hh().bgPhoto || ''; }
 export function bgStrength() { const h = hh(); return (h.bgStrength == null ? 35 : h.bgStrength); }
 export function setBgPhoto(dataUrl) { hh().bgPhoto = dataUrl || ''; save(); }
 export function setBgStrength(v) { hh().bgStrength = Math.max(0, Math.min(100, v)); save(); }
+
+// ヘッダー右上の家族写真（丸アイコン）と、その不透明度(30-100)。端末ごとに保持。
+export function headerPhoto() { return hh().headerPhoto || ''; }
+export function headerStrength() { const h = hh(); return (h.headerStrength == null ? 85 : h.headerStrength); }
+export function setHeaderPhoto(dataUrl) { hh().headerPhoto = dataUrl || ''; save(); }
+export function setHeaderStrength(v) { hh().headerStrength = Math.max(30, Math.min(100, v)); save(); }
 
 export function setMode(mode) { hh().mode = mode; save(); }
 export function setGuests(delta) {

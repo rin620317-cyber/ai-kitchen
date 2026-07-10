@@ -411,6 +411,13 @@ function settingsView() {
     '<div style="flex:1"><b style="font-size:14.5px">背景の写真</b>' +
     '<div class="sub">' + (store.bgPhoto() ? '設定済み（家族の写真を薄く表示中）' : '家族の写真などを背景に薄く置けます') + '</div></div>' +
     '<span style="color:var(--faint)">' + ic('right') + '</span></div>' +
+    '<div class="card tap" style="display:flex;align-items:center;gap:12px;margin-top:8px" onclick="APP.openHeaderPhoto()">' +
+    (store.headerPhoto()
+      ? '<span class="hdr-photo" style="width:38px;height:38px;background-image:url(&quot;' + store.headerPhoto() + '&quot;)"></span>'
+      : '<span style="color:var(--green)">' + ic('users') + '</span>') +
+    '<div style="flex:1"><b style="font-size:14.5px">右上の家族写真</b>' +
+    '<div class="sub">' + (store.headerPhoto() ? '設定済み（右上に丸く表示中）' : '画面右上に家族写真を丸く（少し透過）' ) + '</div></div>' +
+    '<span style="color:var(--faint)">' + ic('right') + '</span></div>' +
     '<div class="sub" style="margin:18px 2px 8px">データ</div>' +
     '<div class="card tap" style="display:flex;align-items:center;gap:12px" onclick="APP.openData()">' +
     '<span style="color:var(--green)">' + ic('database') + '</span>' +
@@ -552,6 +559,24 @@ function bgSheet() {
         '<input type="range" min="0" max="100" step="5" value="' + strength + '" class="rng" oninput="APP.bgStrength(this.value)" />' +
         '<div class="sub" style="margin-top:4px;font-size:11.5px">左：白基調で控えめ ／ 右：写真をはっきり</div>' +
         '<button class="btn ghost" style="margin-top:14px" onclick="APP.clearBg()">' + ic('trash') + '背景をなしにする</button>'
+      : '') +
+    '<button class="btn ghost" style="margin-top:10px" onclick="APP.closeSheet()">とじる</button>';
+}
+function headerPhotoSheet() {
+  const photo = store.headerPhoto();
+  const strength = store.headerStrength();
+  return '<div style="padding:0 2px"><b style="font-size:18px">右上の家族写真</b>' +
+    '<div class="sub" style="margin:4px 0 14px">画面右上に、家族の写真を丸く表示します。少し透過して、白基調のデザインになじませます。世帯ごと・端末ごとの設定です。</div></div>' +
+    (photo
+      ? '<div style="display:flex;justify-content:center;margin-bottom:12px"><span class="hdr-photo" style="width:72px;height:72px;background-image:url(&quot;' + photo + '&quot;);opacity:' + (strength / 100).toFixed(2) + '"></span></div>'
+      : '') +
+    '<input type="file" id="hdr-file" accept="image/*" style="display:none" onchange="APP.pickHeaderFile(this)" />' +
+    '<button class="btn ghost" style="margin-top:' + (photo ? '4px' : '4px') + '" onclick="document.getElementById(\'hdr-file\').click()">' + ic('users') + (photo ? '写真を変える' : '写真を選ぶ') + '</button>' +
+    (photo
+      ? '<label class="fl">透け具合（不透明度）</label>' +
+        '<input type="range" min="30" max="100" step="5" value="' + strength + '" class="rng" oninput="APP.headerStrength(this.value)" />' +
+        '<div class="sub" style="margin-top:4px;font-size:11.5px">左：うっすら透過 ／ 右：はっきり</div>' +
+        '<button class="btn ghost" style="margin-top:14px" onclick="APP.clearHeaderPhoto()">' + ic('trash') + '写真をなしにする</button>'
       : '') +
     '<button class="btn ghost" style="margin-top:10px" onclick="APP.closeSheet()">とじる</button>';
 }
@@ -750,6 +775,21 @@ function refreshBrand() {
   q('hhname').innerHTML = esc(h.name) + ' <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
   q('hhsub').textContent = h.tag + '・家族' + h.members.length + '人' +
     (h.mode === 'senior' ? '・あっさり表示' : h.mode === 'growing' ? '・食べ盛り' : '');
+  const slot = document.querySelector('.topbar .sync, .topbar .hdr-photo-wrap');
+  if (slot) {
+    const photo = store.headerPhoto();
+    const on = sync.isOn();
+    if (photo) {
+      slot.className = 'hdr-photo-wrap';
+      slot.innerHTML = '<span class="hdr-photo" style="background-image:url(&quot;' + photo + '&quot;);opacity:' + (store.headerStrength() / 100).toFixed(2) + '"></span>' +
+        '<span class="hdr-dot' + (on ? ' on' : '') + '"></span>';
+    } else {
+      slot.className = 'sync';
+      slot.innerHTML = '<span class="dot"></span>' + (on ? '共有中' : 'この端末');
+    }
+    slot.style.cursor = 'pointer';
+    slot.onclick = () => APP.openHeaderPhoto();
+  }
 }
 
 // 同期：リモート反映・状態変化のときに開いている画面を最新に描き直す。
@@ -1096,7 +1136,22 @@ const APP = {
     }).catch(() => toast('画像を読み込めませんでした'));
   },
   bgStrength(v) { store.setBgStrength(parseInt(v, 10)); applyBg(); },
-  clearBg() { store.setBgPhoto(''); applyBg(); if (ovEl.firstChild) openOverlay(settingsView(), true); openSheet(bgSheet()); toast('背景をなしにしました'); }
+  clearBg() { store.setBgPhoto(''); applyBg(); if (ovEl.firstChild) openOverlay(settingsView(), true); openSheet(bgSheet()); toast('背景をなしにしました'); },
+
+  // 右上の家族写真
+  openHeaderPhoto() { if (sheetEl.querySelector('.sheet')) closeSheet(); openSheet(headerPhotoSheet()); },
+  pickHeaderFile(inp) {
+    const f = inp.files && inp.files[0]; if (!f) return;
+    toast('写真を読み込み中…');
+    downscaleImage(f, 320, 0.82).then(url => {
+      store.setHeaderPhoto(url); refreshBrand();
+      if (ovEl.firstChild && overlayIsSettings) openOverlay(settingsView(), true);
+      openSheet(headerPhotoSheet());
+      toast('右上に家族写真を設定しました');
+    }).catch(() => toast('画像を読み込めませんでした'));
+  },
+  headerStrength(v) { store.setHeaderStrength(parseInt(v, 10)); refreshBrand(); },
+  clearHeaderPhoto() { store.setHeaderPhoto(''); refreshBrand(); if (ovEl.firstChild && overlayIsSettings) openOverlay(settingsView(), true); openSheet(headerPhotoSheet()); toast('右上の写真をなしにしました'); }
 };
 
 // 端末内保存に収まるよう、選んだ写真を縮小してデータURLにする。
