@@ -33,8 +33,7 @@ h2.kv{font-size:21px;font-weight:700;letter-spacing:.01em}
 .has-bg .status{background:transparent}
 .has-bg .view .card{box-shadow:0 8px 22px -16px rgba(20,20,15,.35)}
 
-.status{display:flex;align-items:center;justify-content:space-between;
-  padding:11px 24px 4px;font-size:13px;font-weight:600;letter-spacing:.02em;background:var(--surface);flex:0 0 auto}
+.status{display:none}  /* アプリ内の飾りステータスバーは全画面で非表示（実機のバーを使う） */
 .status .sig{display:flex;gap:6px;align-items:center}
 .status svg{width:16px;height:16px}
 
