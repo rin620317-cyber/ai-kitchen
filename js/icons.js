@@ -27,7 +27,8 @@ export const ICON = {
   x: '<path d="M6 6l12 12M18 6L6 18"/>',
   chef: '<path d="M7 21h10M8 21v-6M16 21v-6M6 15h12a4 4 0 0 0-1-7 4 4 0 0 0-7-1 4 4 0 0 0-4 8z"/>',
   edit: '<path d="M4 20h4L18 10l-4-4L4 16z"/><path d="M13 7l4 4"/>',
-  cutlery: '<path d="M6 3v5a2 2 0 0 0 2 2M8 3v5M10 3v5a2 2 0 0 1-2 2M8 10v11"/><path d="M16 3c-1.7 0-2.8 2-2.8 4.4 0 1.9 1.2 3 2.8 3s2.8-1.1 2.8-3C18.8 5 17.7 3 16 3ZM16 10.4V21"/>'
+  cutlery: '<path d="M6 3v5a2 2 0 0 0 2 2M8 3v5M10 3v5a2 2 0 0 1-2 2M8 10v11"/><path d="M16 3c-1.7 0-2.8 2-2.8 4.4 0 1.9 1.2 3 2.8 3s2.8-1.1 2.8-3C18.8 5 17.7 3 16 3ZM16 10.4V21"/>',
+  camera: '<rect x="3" y="7" width="18" height="13" rx="2.5"/><path d="M8.5 7l1.3-2.5h4.4L15.5 7"/><circle cx="12" cy="13.5" r="3.3"/>'
 };
 
 export function ic(name, cls) {

@@ -138,7 +138,26 @@ async function callGemini(modelId, body) {
     const err = new Error('AIの応答が空でした。もう一度お試しください。'); err.transient = true; throw err;
   }
   const text = cand.content.parts.map(p => p.text || '').join('');
-  return JSON.parse(text).recipes || [];
+  return JSON.parse(text);
+}
+
+// 混雑リトライ＋flashフォールバックの共通ループ。extractで欲しい配列を取り出す。
+async function runWithRetry(body, extract) {
+  const chosen = model();
+  const chain = chosen === 'flash-lite'
+    ? ['flash-lite', 'flash-lite', 'flash-lite', 'flash']
+    : ['flash', 'flash', 'flash'];
+  const waits = [700, 1600, 2600, 1500];
+  let lastErr = null;
+  for (let i = 0; i < chain.length; i++) {
+    try { return extract(await callGemini(MODELS[chain[i]], body)); }
+    catch (e) {
+      lastErr = e;
+      if (!e.transient) throw e;
+      if (i < chain.length - 1) await sleep(waits[i] || 1500);
+    }
+  }
+  throw lastErr || new Error('API_ERROR');
 }
 
 export async function generateRecipes(context, count) {
@@ -162,23 +181,63 @@ export async function generateRecipes(context, count) {
     }
   };
   // 最安(flash-lite)を数回リトライ→なお混雑なら高品質(flash)へ自動フォールバック。
-  // 高品質を選んでいる場合はflashのみをリトライ。
-  const chosen = model();
-  const chain = chosen === 'flash-lite'
-    ? ['flash-lite', 'flash-lite', 'flash-lite', 'flash']
-    : ['flash', 'flash', 'flash'];
-  const waits = [700, 1600, 2600, 1500];
-  let lastErr = null;
-  for (let i = 0; i < chain.length; i++) {
-    try {
-      return await callGemini(MODELS[chain[i]], body);
-    } catch (e) {
-      lastErr = e;
-      if (!e.transient) throw e;                 // キー不正など恒久エラーは即中断
-      if (i < chain.length - 1) await sleep(waits[i] || 1500);
+  return runWithRetry(body, (o) => o.recipes || []);
+}
+
+// レシート画像から購入した食材を抽出する。
+const RECEIPT_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    items: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          name: { type: 'STRING' },
+          qty: { type: 'STRING' },
+          category: { type: 'STRING' },
+          perishable: { type: 'BOOLEAN' }
+        },
+        required: ['name', 'qty', 'category', 'perishable']
+      }
     }
-  }
-  throw lastErr || new Error('API_ERROR');
+  },
+  required: ['items']
+};
+
+const RECEIPT_SYSTEM = [
+  'あなたはレシート画像から、購入した食品・食材だけを抽出するアシスタントです。',
+  '・食品/食材のみを対象。日用品・生活用品・レジ袋・ポイント・値引き行などは除外する。',
+  '・nameは分かりやすい一般的な食材名に正規化する（商品名や略称は言い換える）。',
+  '・qtyは数量や内容量が読み取れれば入れる（不明なら空文字）。',
+  '・categoryは veg / fruit / meat / fish / dairy / deli / pantry / other のいずれか。',
+  '・perishableは、冷蔵・冷凍が必要な生鮮品なら true、常温保存できるもの（調味料・油・乾物・缶詰・米・菓子など）なら false。',
+  '・読み取れない、または食品が無ければ items を空配列にする。'
+].join('\n');
+
+export async function extractReceiptItems(imageDataUrl) {
+  const key = apiKey();
+  if (!key) throw new Error('NO_KEY');
+  const m = /^data:(image\/[a-zA-Z+]+);base64,(.+)$/.exec(imageDataUrl || '');
+  if (!m) throw new Error('画像を読み込めませんでした');
+  const body = {
+    system_instruction: { parts: [{ text: RECEIPT_SYSTEM }] },
+    contents: [{
+      role: 'user',
+      parts: [
+        { text: 'このレシート画像から、購入した食材をJSONで抽出してください。' },
+        { inline_data: { mime_type: m[1], data: m[2] } }
+      ]
+    }],
+    generationConfig: {
+      temperature: 0.2,
+      maxOutputTokens: 4096,
+      responseMimeType: 'application/json',
+      responseSchema: RECEIPT_SCHEMA,
+      thinkingConfig: { thinkingBudget: 0 }
+    }
+  };
+  return runWithRetry(body, (o) => o.items || []);
 }
 
 // キー無し・オフライン用の見本献立（スキーマと同形）。

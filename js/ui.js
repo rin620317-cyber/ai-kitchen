@@ -2,7 +2,7 @@
 import { ic } from './icons.js';
 import { todayLabel, clockLabel, ageLabel, birthLabel, expiryInfo, daysUntil, esc, CATEGORIES, guessCategory, estimateExpiry } from './util.js';
 import * as store from './store.js';
-import { buildContext, generateRecipes, SAMPLE_RECIPES } from './api.js';
+import { buildContext, generateRecipes, extractReceiptItems, SAMPLE_RECIPES } from './api.js';
 import { APP_VERSION } from './version.js';
 
 let curTab = 'home';
@@ -11,6 +11,9 @@ let curRecipes = [];   // 献立タブに表示中のレシピ群
 let curRecipe = null;  // レシピ詳細で開いている1件
 let makeCtx = null;    // 「作った」更新シートの状態
 let gen = { loading: false, error: '' };
+let nutriDemo = 'male';  // 栄養バーの対象（男性/女性/子ども/シニア）
+let rcptLoading = false;  // レシート読み取り中
+let rcptCtx = null;       // レシート抽出結果（確認シート用）
 const reduce = window.matchMedia('(prefers-reduced-motion:reduce)').matches;
 
 const TONE_AV = { green: 'a-green', rose: 'a-rose', amber: 'a-amber' };
@@ -33,6 +36,37 @@ function nchip(label, val, unit) {
     '<div class="sub" style="font-size:10.5px">' + label + '</div>' +
     '<div class="num" style="font-size:17px;font-weight:700;margin-top:2px">' + val +
     '<span style="font-size:11px;font-weight:500"> ' + unit + '</span></div></div>';
+}
+
+// 1食あたりの栄養目安（1日の推奨量のおおよそ1/3）。年代・性別で異なる。
+const NUTRI_REF = {
+  male:   { label: '男性', kcal: 880, protein: 22, fat: 24, carb: 123, salt: 2.5, veg: 117 },
+  female: { label: '女性', kcal: 667, protein: 17, fat: 18, carb: 92, salt: 2.2, veg: 117 },
+  child:  { label: '子ども', kcal: 533, protein: 15, fat: 15, carb: 73, salt: 1.7, veg: 100 },
+  senior: { label: 'シニア', kcal: 667, protein: 20, fat: 18, carb: 92, salt: 2.3, veg: 117 }
+};
+function nbar(label, val, target, unit) {
+  const pct = Math.round(val / target * 100);
+  const over = (label === '塩分') && (pct > 100);
+  const color = over ? '#C64A38' : '#E0812A';
+  return '<div style="margin:11px 0 0">' +
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">' +
+    '<span style="font-size:12.5px">' + label + '</span>' +
+    '<span class="num" style="font-size:11.5px;color:var(--muted)">' + val + unit + ' ・ ' + pct + '%' + (over ? '（多め）' : '') + '</span></div>' +
+    '<div class="nbar"><span style="width:' + Math.min(100, pct) + '%;background:' + color + '"></span></div></div>';
+}
+function nutriBlock(r) {
+  const ref = NUTRI_REF[nutriDemo] || NUTRI_REF.male;
+  const n = r.nutrition;
+  const tabs = '<div class="seg">' + Object.keys(NUTRI_REF).map(k =>
+    '<button class="' + (k === nutriDemo ? 'on' : '') + '" onclick="APP.nutriTab(\'' + k + '\')">' + NUTRI_REF[k].label + '</button>').join('') + '</div>';
+  return tabs +
+    nbar('エネルギー', r.kcal, ref.kcal, 'kcal') +
+    nbar('たんぱく質', n.protein_g, ref.protein, 'g') +
+    nbar('脂質', n.fat_g, ref.fat, 'g') +
+    nbar('炭水化物', n.carb_g, ref.carb, 'g') +
+    nbar('塩分', n.salt_g, ref.salt, 'g') +
+    nbar('野菜', n.veg_g, ref.veg, 'g');
 }
 
 // ---------- ホーム ----------
@@ -120,6 +154,9 @@ function stockScreen() {
     '<div class="row" style="padding:10px 2px 6px"><h2 class="kv">在庫・常備品</h2>' +
     '<button class="round-btn" onclick="APP.toast(\'音声入力は今後対応予定です\')" aria-label="音声で追加">' + ic('mic') + '</button></div>' +
     '<div class="sub" style="margin-bottom:12px">冷蔵庫の中身はあなたが入力。常備品は切れそうな時だけ通知。</div>' +
+    '<input type="file" id="rcpt-file" accept="image/*" capture="environment" style="display:none" onchange="APP.receiptFile(this)" />' +
+    '<button class="btn primary" style="margin-bottom:14px"' + (rcptLoading ? ' disabled' : '') + ' onclick="APP.openReceipt()">' +
+    (rcptLoading ? spinner() + ' レシートを読み取り中…' : ic('camera') + ' レシート撮影で在庫に追加') + '</button>' +
     '<div class="seg" id="seg">' +
     '<button class="' + (segIndex === 0 ? 'on' : '') + '" onclick="APP.seg(0)">冷蔵</button>' +
     '<button class="' + (segIndex === 1 ? 'on' : '') + '" onclick="APP.seg(1)">冷凍</button>' +
@@ -251,11 +288,9 @@ function recipeView(r) {
         r.components.map(c => '<div class="listrow"><span class="chip c-green" style="min-width:46px;justify-content:center">' + esc(c.role) + '</span>' +
           '<span style="flex:1;font-size:14px">' + esc(c.name) + '</span></div>').join('') + '</div>'
       : '') +
-    '<div class="sub" style="margin-bottom:8px">栄養（1人分・ざっくり）</div>' +
-    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">' +
-    nchip('エネルギー', r.kcal, 'kcal') + nchip('たんぱく質', n.protein_g, 'g') + nchip('脂質', n.fat_g, 'g') +
-    nchip('炭水化物', n.carb_g, 'g') + nchip('塩分', n.salt_g, 'g') + nchip('野菜', n.veg_g, 'g') + '</div>' +
-    '<div class="sub" style="margin:10px 2px 16px;font-size:11px">※目安値。1日の食事全体でバランスを判定します。</div>' +
+    '<div class="sub" style="margin-bottom:8px">栄養（1人分・1食の必要量に対する割合）</div>' +
+    '<div id="nutri-block">' + nutriBlock(r) + '</div>' +
+    '<div class="sub" style="margin:10px 2px 16px;font-size:11px">※1食あたりの目安に対する割合。年代・性別で必要量が異なります。塩分は控えめが目安。</div>' +
     note +
     (used.length
       ? '<div class="sub" style="margin:18px 2px 8px">この料理で使う在庫</div><div class="card" style="padding:2px 14px">' +
@@ -522,6 +557,27 @@ function memberSheet(m) {
     (isNew ? '' : '<button class="btn ghost" style="margin-top:10px" onclick="APP.deleteMember(\'' + m.id + '\')">' + ic('trash') + 'この家族を削除</button>');
 }
 
+function receiptSheet() {
+  return '<div style="padding:0 2px"><b style="font-size:18px">レシートから追加</b>' +
+    '<div class="sub" style="margin:4px 0 14px">読み取った食材です。追加する物にチェックしてください。生鮮は冷蔵、調味料などは常備品に入ります。</div></div>' +
+    '<div id="rcpt-body">' + rcptBody() + '</div>';
+}
+function rcptBody() {
+  const rows = rcptCtx.items.map((it, i) => {
+    const place = it.perishable ? '冷蔵（期限は自動見積り）' : '常備品';
+    return '<div class="listrow">' +
+      '<div class="cbox' + (it.checked ? ' done' : '') + '" onclick="APP.rcptToggle(' + i + ')">' + ic('check') + '</div>' +
+      '<div style="flex:1;min-width:0"><div style="font-size:14.5px' + (it.checked ? '' : ';color:var(--faint)') + '">' +
+      esc(it.name) + (it.qty ? ' <span class="sub">' + esc(it.qty) + '</span>' : '') + '</div>' +
+      '<div class="sub">' + place + '</div></div></div>';
+  }).join('');
+  const n = rcptCtx.items.filter(x => x.checked).length;
+  return '<div class="card" style="padding:2px 14px">' + (rows || '<div class="listrow"><span class="sub">品目がありません</span></div>') + '</div>' +
+    '<button class="btn primary" style="margin-top:14px"' + (n ? '' : ' disabled') + ' onclick="APP.confirmReceipt()">' +
+    ic('plus') + '選んだ ' + n + ' 品を在庫に追加</button>' +
+    '<button class="btn ghost" style="margin-top:10px" onclick="APP.closeSheet()">やめる</button>';
+}
+
 // ---------- ルーター ----------
 const TABS = ['home', 'stock', 'menu', 'shop'];
 const SCREENS = { home: homeScreen, stock: stockScreen, menu: menuScreen, shop: shopScreen };
@@ -579,6 +635,7 @@ const APP = {
     curRecipe = (i === -1) ? todaysDinner() : (curRecipes[i] || SAMPLE_RECIPES[i] || SAMPLE_RECIPES[0]);
     openOverlay(recipeView(curRecipe));
   },
+  nutriTab(demo) { nutriDemo = demo; const el = q('nutri-block'); if (el && curRecipe) el.innerHTML = nutriBlock(curRecipe); },
 
   async generate() {
     gen.loading = true; gen.error = '';
@@ -661,6 +718,43 @@ const APP = {
     closeSheet(); render(); toast('保存しました');
   },
   deleteStock(id) { store.removeStock(id); closeSheet(); render(); toast('削除しました'); },
+
+  // レシート撮影で在庫補充
+  openReceipt() { if (rcptLoading) return; const el = q('rcpt-file'); if (el) el.click(); },
+  receiptFile(inp) {
+    const f = inp.files && inp.files[0];
+    inp.value = '';
+    if (!f) return;
+    rcptLoading = true; render();
+    downscaleImage(f, 1600, 0.7)
+      .then(url => extractReceiptItems(url))
+      .then(items => {
+        rcptLoading = false; render();
+        if (!items || !items.length) { toast('食材が読み取れませんでした。明るく撮り直してみてください'); return; }
+        rcptCtx = { items: items.map(it => Object.assign({ checked: true }, it)) };
+        openSheet(receiptSheet());
+      })
+      .catch(e => {
+        rcptLoading = false; render();
+        if (String(e.message) === 'NO_KEY') toast('APIキーが未設定です（設定から入れてください）');
+        else toast('読み取りに失敗：' + e.message);
+      });
+  },
+  rcptToggle(i) { rcptCtx.items[i].checked = !rcptCtx.items[i].checked; q('rcpt-body').innerHTML = rcptBody(); },
+  confirmReceipt() {
+    const chosen = rcptCtx.items.filter(x => x.checked);
+    if (!chosen.length) { toast('追加する物を選んでください'); return; }
+    chosen.forEach(it => {
+      if (it.perishable) {
+        const cat = it.category || guessCategory(it.name);
+        store.addStock(it.name, it.qty || '', estimateExpiry(cat, false, 'fridge'), 'fridge');
+      } else {
+        store.addPantry(it.name);
+      }
+    });
+    closeSheet(); curTab = 'stock'; segIndex = 0; render();
+    toast(chosen.length + '品を在庫に追加しました');
+  },
 
   // 常備品
   openAddPantry() { openSheet(addPantrySheet()); },
