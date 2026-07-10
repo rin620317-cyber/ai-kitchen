@@ -180,12 +180,24 @@ export function setGuests(delta) {
 }
 export function togglePolicy(k) { const h = hh(); h.policy[k] = !h.policy[k]; save(); }
 
-export function servingCount(h) { h = h || hh(); return h.members.length + (h.guests || 0); }
+// 来客名簿：登録しておき、来る日だけ active=true にする（毎回入力しなくてよい）。
+export function activeGuests(h) { h = h || hh(); return (h.guestRoster || []).filter(g => g.active); }
+export function addGuest(g) {
+  const h = hh(); h.guestRoster = h.guestRoster || [];
+  h.guestRoster.push(Object.assign({ id: uid(), name: '来客', birth: '', toddler: false, dislikes: [], active: true }, g));
+  save();
+}
+export function updateGuest(id, patch) { const g = (hh().guestRoster || []).find(x => x.id === id); if (g) { Object.assign(g, patch); save(); } }
+export function removeGuest(id) { const h = hh(); h.guestRoster = (h.guestRoster || []).filter(x => x.id !== id); save(); }
+export function toggleGuest(id) { const g = (hh().guestRoster || []).find(x => x.id === id); if (g) { g.active = !g.active; save(); } }
+
+export function servingCount(h) { h = h || hh(); return h.members.length + activeGuests(h).length + (h.guests || 0); }
 
 export function toddlerPresent(h) {
   h = h || hh();
   if (h.members.some(m => m.toddler)) return true;
-  // 実家に孫（乳幼児含む）が泊まる想定
+  if (activeGuests(h).some(g => g.toddler)) return true;
+  // 実家に孫（乳幼児含む）が泊まる想定（名前なしの追加人数のとき）
   return h.id === 'hh-jikka' && (h.guests || 0) > 0;
 }
 
@@ -193,6 +205,7 @@ export function dislikes(h) {
   h = h || hh();
   const set = new Set();
   h.members.forEach(m => (m.dislikes || []).forEach(d => set.add(d)));
+  activeGuests(h).forEach(g => (g.dislikes || []).forEach(d => set.add(d)));
   return Array.from(set);
 }
 

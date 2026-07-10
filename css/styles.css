@@ -80,6 +80,10 @@ h2.kv{font-size:21px;font-weight:700;letter-spacing:.01em}
 .c-danger{background:var(--danger-soft);color:var(--danger)}
 .c-line{background:transparent;border:1px solid var(--line);color:var(--muted)}
 .hero-chip{background:rgba(255,255,255,.22);color:#fff}
+.pick-wrap{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.pick-chip{font-family:inherit;font-size:13px;font-weight:600;padding:8px 13px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;transition:.15s}
+.pick-chip.on{background:var(--green);border-color:var(--green);color:#fff}
+.pick-chip:active{transform:scale(.96)}
 
 .btn{width:100%;border:none;font-family:inherit;font-size:14.5px;font-weight:700;padding:15px;border-radius:var(--r-btn);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:transform .12s}
 .btn:active{transform:scale(.97)}

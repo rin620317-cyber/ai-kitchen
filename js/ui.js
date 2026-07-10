@@ -17,6 +17,7 @@ let rcptLoading = false;  // レシート読み取り中
 let rcptCtx = null;       // レシート抽出結果（確認シート用）
 let overlayIsSettings = false;  // 設定オーバーレイ表示中か（同期反映時の再描画用）
 let sheetIsSync = false;        // 共有シート表示中か
+let useIng = [];                // 「使いたい食材」指定提案で選んだ食材名
 const reduce = window.matchMedia('(prefers-reduced-motion:reduce)').matches;
 
 const TONE_AV = { green: 'a-green', rose: 'a-rose', amber: 'a-amber' };
@@ -229,10 +230,27 @@ function menuScreen() {
     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 10px">' + chips.join('') + '</div>' +
     (gen.error ? '<div class="card danger-card" style="align-items:flex-start" onclick="APP.openApiKey()">' + ic('alert') +
       '<span style="font-size:12.5px">' + esc(gen.error) + '</span></div>' : '') +
-    '<button class="btn primary" style="margin:2px 0 18px"' + (gen.loading ? ' disabled' : '') + ' onclick="APP.generate()">' +
+    '<button class="btn primary" style="margin:2px 0 10px"' + (gen.loading ? ' disabled' : '') + ' onclick="APP.generate()">' +
     (gen.loading ? spinner() + ' 考えています…' : ic('spark') + ' AIに献立を提案してもらう') + '</button>' +
+    '<button class="btn ghost" style="margin:0 0 18px"' + (gen.loading ? ' disabled' : '') + ' onclick="APP.openUseIng()">' +
+    ic('fridge') + ' 使いたい食材を指定して提案' + '</button>' +
     '<div class="sub" style="margin:0 2px 10px">' + (h.savedRecipes.length ? '前回の提案' : '見本の献立') + '</div>' +
     cards + '</div>';
+}
+function ingredientPickSheet() {
+  const h = store.hh();
+  const items = h.fridge.slice();
+  const chips = items.length
+    ? items.map(f => '<button class="pick-chip' + (useIng.indexOf(f.name) >= 0 ? ' on' : '') + '" onclick="APP.toggleUseIng(\'' + esc(f.name).replace(/'/g, '') + '\',this)">' + esc(f.name) + '</button>').join('')
+    : '<div class="sub">冷蔵庫が空です。下の入力欄に使いたい食材を書けます。</div>';
+  return '<div style="padding:0 2px"><b style="font-size:18px">使いたい食材で提案</b>' +
+    '<div class="sub" style="margin:4px 0 14px">使いたい在庫をタップで選ぶ（複数OK）。作りたい料理があれば下に書けます。選んだ食材を主役に、一汁三菜で提案します。</div></div>' +
+    '<label class="fl">冷蔵庫から選ぶ</label>' +
+    '<div class="pick-wrap">' + chips + '</div>' +
+    '<label class="fl" style="margin-top:14px">作りたい料理・使いたい食材（自由入力・任意）</label>' +
+    '<input id="use-req" class="inp" placeholder="例：豚こまで生姜焼き／麻婆豆腐 が食べたい" />' +
+    '<button class="btn primary" style="margin-top:16px"' + (gen.loading ? ' disabled' : '') + ' onclick="APP.generateWithIngredients()">' + ic('spark') + 'この内容で提案してもらう</button>' +
+    '<button class="btn ghost" style="margin-top:10px" onclick="APP.closeSheet()">とじる</button>';
 }
 function tagTone(r) {
   if (/減塩|野菜|栄養|使い切/.test(r.tag)) return 'c-green';
@@ -346,10 +364,23 @@ function settingsView() {
       return '<div class="opt' + (on ? ' on' : '') + '" onclick="APP.setMode(\'' + m[0] + '\')"><span class="rad"></span>' +
         '<div><b style="font-size:14.5px">' + m[1] + '</b><div class="sub" style="margin-top:1px">' + m[2] + '</div></div></div>';
     }).join('') +
-    '<div class="card soft" style="margin:6px 0 20px;padding:14px 16px"><div class="row">' +
-    '<div><b style="font-size:14px">お泊まり・来客</b><div class="sub" style="margin-top:2px">' + (h.id === 'hh-jikka' ? '孫が泊まる日など、' : '') + '分量に一時的に加算</div></div>' +
+    '<div class="sub" style="margin:0 2px 8px">来客・お泊まり</div>' +
+    '<div class="card" style="padding:2px 14px">' +
+    ((h.guestRoster || []).map(g =>
+      '<div class="listrow">' +
+      '<span class="avatar a-amber" style="width:36px;height:36px;font-size:12px;flex:0 0 auto' + (g.active ? '' : ';opacity:.35') + '">' + esc((g.name || '客').slice(0, 1)) + '</span>' +
+      '<div style="flex:1;min-width:0" onclick="APP.openGuest(\'' + g.id + '\')"><div style="font-size:14.5px">' + esc(g.name) +
+      ' <span style="color:var(--green);font-weight:700;font-size:12px">' + ageLabel(g.birth, g.toddler) + '</span>' + (g.toddler ? ' <span class="chip c-rose" style="padding:2px 7px">取り分け</span>' : '') + '</div>' +
+      '<div class="sub">' + (g.active ? '今日は来る（加算中）' : 'いまは来ていない') + ((g.dislikes && g.dislikes.length) ? ' ・ ' + esc(g.dislikes.join('/')) + '苦手' : '') + '</div></div>' +
+      '<span class="switch' + (g.active ? ' on' : '') + '" onclick="APP.toggleGuest(\'' + g.id + '\')"><span class="knob"></span></span></div>'
+    ).join('')) +
+    ((h.guestRoster || []).length ? '' : '<div class="sub" style="padding:12px 2px">よく来る人（お孫さんなど）を登録すると、来る日にワンタップで人数・年齢・取り分けに反映できます。</div>') +
+    '</div>' +
+    '<button class="btn ghost" style="margin:12px 0 8px" onclick="APP.openGuest(null)">' + ic('plus') + '来客を登録</button>' +
+    '<div class="card soft" style="margin:6px 0 20px;padding:12px 16px"><div class="row">' +
+    '<div><b style="font-size:13.5px">名前なしの追加人数</b><div class="sub" style="margin-top:2px">その場だけの増員（分量のみ加算）</div></div>' +
     '<div class="stepper"><button onclick="APP.guest(-1)" aria-label="減らす">' + ic('minus') + '</button>' +
-    '<b class="num" style="font-size:18px;width:44px;text-align:center">+' + (h.guests || 0) + '人</b>' +
+    '<b class="num" style="font-size:17px;width:40px;text-align:center">+' + (h.guests || 0) + '</b>' +
     '<button onclick="APP.guest(1)" aria-label="増やす">' + ic('plus') + '</button></div></div></div>' +
     '<div class="sub" style="margin:0 2px 8px">家族（' + h.members.length + '人）</div><div class="card" style="padding:2px 14px">' +
     h.members.map(m =>
@@ -591,6 +622,21 @@ function memberSheet(m) {
     (isNew ? '' : '<button class="btn ghost" style="margin-top:10px" onclick="APP.deleteMember(\'' + m.id + '\')">' + ic('trash') + 'この家族を削除</button>');
 }
 
+function guestSheet(g) {
+  const isNew = !g;
+  g = g || { name: '', birth: '', role: '', dislikes: [], toddler: false, active: true };
+  return '<div style="padding:0 2px"><b style="font-size:18px">' + (isNew ? '来客を登録' : esc(g.name)) + '</b>' +
+    '<div class="sub" style="margin:4px 0 14px">生年月だけでもOK（年齢は自動計算）。一度登録すれば、来る日にスイッチをオンにするだけです。</div></div>' +
+    '<label class="fl">名前・呼び名</label><input id="g-name" class="inp" value="' + esc(g.name) + '" placeholder="例：孫（そうた）" />' +
+    '<label class="fl">生年月日（分かる範囲で）</label><input id="g-birth" class="inp" type="date" value="' + (g.birth || '') + '" />' +
+    '<label class="fl">苦手な食材（カンマ区切り・任意）</label><input id="g-dis" class="inp" value="' + esc((g.dislikes || []).join(',')) + '" placeholder="例：えび,かに" />' +
+    '<div class="card" style="margin-top:12px;padding:2px 14px"><div class="listrow" onclick="APP.toggleGuestToddler(this)">' +
+    '<div style="flex:1"><b style="font-size:14px">取り分け（幼児）が必要</b><div class="sub" style="margin-top:2px">薄味・やわらかめの取り分けを用意</div></div>' +
+    '<span id="g-tod" class="switch' + (g.toddler ? ' on' : '') + '" data-on="' + (g.toddler ? '1' : '0') + '"><span class="knob"></span></span></div></div>' +
+    '<button class="btn primary" style="margin-top:16px" onclick="APP.saveGuest(' + (isNew ? 'null' : '\'' + g.id + '\'') + ')">' + ic('check') + (isNew ? '登録する' : '保存') + '</button>' +
+    (isNew ? '' : '<button class="btn ghost" style="margin-top:10px" onclick="APP.removeGuest(\'' + g.id + '\')">' + ic('trash') + 'この来客を削除</button>');
+}
+
 function receiptSheet() {
   return '<div style="padding:0 2px"><b style="font-size:18px">レシートから追加</b>' +
     '<div class="sub" style="margin:4px 0 14px">読み取った食材です。追加する物にチェックしてください。生鮮は冷蔵、調味料などは常備品に入ります。</div></div>' +
@@ -733,14 +779,16 @@ const APP = {
   },
   nutriTab(demo) { nutriDemo = demo; const el = q('nutri-block'); if (el && curRecipe) el.innerHTML = nutriBlock(curRecipe); },
 
-  async generate() {
+  generate() { return APP.runGenerate(null); },
+  async runGenerate(opts) {
     gen.loading = true; gen.error = '';
     render();                                   // 今いる画面のままローディング表示
     try {
-      const recipes = await generateRecipes(buildContext(store.hh()), 4);
+      const recipes = await generateRecipes(buildContext(store.hh()), 4, opts || {});
       if (recipes && recipes.length) { store.saveRecipes(recipes); curRecipes = recipes; }
       gen.loading = false; render();
-      toast('いまの在庫に合わせて献立を更新しました');
+      const named = opts && ((opts.mustUse && opts.mustUse.length) || opts.request);
+      toast(named ? '指定に合わせて献立を作りました' : 'いまの在庫に合わせて献立を更新しました');
     } catch (e) {
       gen.loading = false;
       if (String(e.message) === 'NO_KEY') {
@@ -752,6 +800,19 @@ const APP = {
       }
       render();
     }
+  },
+  openUseIng() { useIng = []; curTab = 'menu'; openSheet(ingredientPickSheet()); },
+  toggleUseIng(name, el) {
+    const i = useIng.indexOf(name);
+    if (i >= 0) useIng.splice(i, 1); else useIng.push(name);
+    if (el) el.classList.toggle('on');
+  },
+  generateWithIngredients() {
+    const req = ((q('use-req') || {}).value || '').trim();
+    const names = useIng.slice();
+    if (!names.length && !req) { toast('食材を選ぶか、作りたい料理を入力してください'); return; }
+    closeSheet(); curTab = 'menu';
+    APP.runGenerate({ mustUse: names, request: req });
   },
 
   // 在庫の「作った」更新
@@ -973,6 +1034,29 @@ const APP = {
     toast(id ? '保存しました' : '追加しました');
   },
   deleteMember(id) { store.removeMember(id); closeSheet(); openOverlay(settingsView(), true); render(); toast('削除しました'); },
+
+  // 来客名簿
+  openGuest(id) { const g = id ? (store.hh().guestRoster || []).find(x => x.id === id) : null; openSheet(guestSheet(g)); },
+  toggleGuestToddler(row) {
+    const s = row.querySelector('#g-tod'); const on = s.getAttribute('data-on') === '1';
+    s.setAttribute('data-on', on ? '0' : '1'); s.classList.toggle('on', !on);
+  },
+  saveGuest(id) {
+    const name = q('g-name').value.trim() || '来客';
+    const dis = q('g-dis').value.split(',').map(s => s.trim()).filter(Boolean);
+    const patch = { name, birth: q('g-birth').value || '', dislikes: dis, toddler: q('g-tod').getAttribute('data-on') === '1' };
+    if (id) store.updateGuest(id, patch);
+    else store.addGuest(Object.assign(patch, { active: true }));
+    closeSheet(); if (ovEl.firstChild) openOverlay(settingsView(), true); render();
+    toast(id ? '保存しました' : '来客を登録しました');
+  },
+  removeGuest(id) { store.removeGuest(id); closeSheet(); if (ovEl.firstChild) openOverlay(settingsView(), true); render(); toast('削除しました'); },
+  toggleGuest(id) {
+    store.toggleGuest(id);
+    if (ovEl.firstChild && overlayIsSettings) openOverlay(settingsView(), true);
+    render();
+    toast(store.hh().guestRoster.find(g => g.id === id).active ? '来客を加算しました' : '来客を除外しました');
+  },
 
   // APIキー
   openApiKey() { if (sheetEl.querySelector('.sheet')) closeSheet(); openSheet(apiKeySheet()); },

@@ -1,7 +1,7 @@
 // 献立AI。Google Gemini API に在庫・常備品・家族構成を渡し、
 // 栄養・取り分け・時短を考慮した献立をJSONで受け取る。
 // キー未設定・オフライン時はサンプル献立で全画面が動く。
-import { effectiveApiKey, model, servingCount, toddlerPresent, dislikes } from './store.js';
+import { effectiveApiKey, model, servingCount, toddlerPresent, dislikes, activeGuests } from './store.js';
 import { daysUntil } from './util.js';
 
 // 最安クラス（無料枠あり）の Flash-Lite を既定に。高品質側は Flash。
@@ -22,10 +22,12 @@ export function buildContext(h) {
     人数: servingCount(h),
     モード: h.mode === 'growing' ? '食べ盛り（分量を1.3倍で多めに）'
       : h.mode === 'senior' ? 'シニア（薄味・やわらかめ・少量目安）' : '標準',
-    お泊まり追加: h.guests || 0,
+    お泊まり追加: (h.guests || 0) + activeGuests(h).length,
     家族: h.members.map(m => ({
       名前: m.name, 年齢: ageYears(m.birth), 役割: m.role || '', 苦手: m.dislikes || [], 幼児: !!m.toddler
-    })),
+    })).concat(activeGuests(h).map(g => ({
+      名前: g.name + '（来客）', 年齢: ageYears(g.birth), 役割: '来客', 苦手: g.dislikes || [], 幼児: !!g.toddler
+    }))),
     苦手食材: dislikes(h),
     取り分け対応: toddlerPresent(h),
     方針: {
@@ -99,6 +101,7 @@ const SYSTEM = [
   '・ingredients と steps は献立全体（すべての料理分）をまとめて記載する。手順は料理ごとに分かるよう簡潔に。',
   '・平日で時短優先でも、即席の汁物や和える程度の簡単な副菜で一汁三菜を目指す。',
   '・nutrition と kcal は献立全体（1人分の合計）の目安。',
+  '・「必ず使う食材」やリクエスト（作りたい料理）が指定された場合は、それを最優先で満たす。',
   '・冷蔵庫の食材、特に期限が近いものを優先して使い切る。',
   '・常備品（調味料・米など）は常にある前提で自由に使ってよい。買い物には出さない。',
   '・苦手食材は使わないか、代替・別添えにする。',
@@ -160,18 +163,19 @@ async function runWithRetry(body, extract) {
   throw lastErr || new Error('API_ERROR');
 }
 
-export async function generateRecipes(context, count) {
+export async function generateRecipes(context, count, opts) {
   const key = effectiveApiKey();
   if (!key) throw new Error('NO_KEY');
+  opts = opts || {};
+  const mustUse = (opts.mustUse || []).filter(Boolean);
+  const request = (opts.request || '').trim();
+  let ask = '次の家庭に、夕食の献立を' + (count || 4) + '案、JSONで提案してください。\n';
+  if (mustUse.length) ask += '【必ず使う食材】次を主役として全案に使ってください（在庫にあります）: ' + mustUse.join('、') + '\n';
+  if (request) ask += '【リクエスト】' + request + '（作りたい料理の指定があれば、その料理を中心に。足りない食材は uses_stock でなく ingredients に含め、買い物想定でよい）\n';
+  ask += JSON.stringify(context, null, 2);
   const body = {
     system_instruction: { parts: [{ text: SYSTEM }] },
-    contents: [{
-      role: 'user',
-      parts: [{
-        text: '次の家庭に、夕食の献立を' + (count || 4) + '案、JSONで提案してください。\n' +
-          JSON.stringify(context, null, 2)
-      }]
-    }],
+    contents: [{ role: 'user', parts: [{ text: ask }] }],
     generationConfig: {
       temperature: 0.7,
       maxOutputTokens: 8192,
