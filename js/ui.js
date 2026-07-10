@@ -115,6 +115,7 @@ function homeScreen() {
     quickRow('cart', '買い物リストを確認', 'shop', (h.shopping.filter(s => !s.done).length) + '点') +
     quickRow('book', '献立を提案してもらう', 'menu', '') +
     quickRow('fridge', '冷蔵庫を更新', 'stock', h.fridge.length + '品') +
+    '<div style="text-align:center;color:var(--faint);font-size:11px;margin:22px 0 6px" class="num">AI Kitchen　v' + APP_VERSION + '</div>' +
     '</div>';
 }
 function quickRow(icon, label, tab, badge) {
@@ -145,7 +146,9 @@ function seniorHome() {
     '<div class="card tap" style="margin-top:14px;display:flex;gap:10px;align-items:center" onclick="APP.go(\'stock\')">' +
     '<span style="color:var(--green)">' + ic('fridge') + '</span>' +
     '<div style="flex:1"><b style="font-size:16px">冷蔵庫をみる</b></div>' +
-    '<span style="color:var(--faint)">' + ic('right') + '</span></div></div>';
+    '<span style="color:var(--faint)">' + ic('right') + '</span></div>' +
+    '<div style="text-align:center;color:var(--faint);font-size:12px;margin:22px 0 6px" class="num">AI Kitchen　v' + APP_VERSION + '</div>' +
+    '</div>';
 }
 
 // ---------- 在庫・常備品 ----------
