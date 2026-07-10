@@ -118,6 +118,10 @@ h2.kv{font-size:21px;font-weight:700;letter-spacing:.01em}
 /* hero food tile */
 .hero{height:150px;border-radius:22px;position:relative;overflow:hidden;display:flex;align-items:flex-end;padding:14px}
 .hero .glo{position:absolute;right:-30px;top:-30px;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.22)}
+.hero-refresh{position:absolute;top:12px;right:12px;z-index:2;display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.24);color:#fff;border:none;font-family:inherit;font-size:12px;font-weight:600;padding:6px 12px;border-radius:999px;cursor:pointer;transition:transform .12s}
+.hero-refresh:active{transform:scale(.95)}
+.hero-refresh svg{width:15px;height:15px}
+.hero-refresh.spinning svg{animation:rot 1s linear infinite}
 .hero-in{position:relative;color:#fff}
 .thumb{width:60px;height:60px;border-radius:16px;flex:0 0 auto}
 .g1{background:linear-gradient(135deg,#2F8C63,#155C3F)}

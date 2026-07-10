@@ -55,7 +55,10 @@ function homeScreen() {
   return '<div class="fade">' +
     '<div style="padding:10px 2px 14px"><div class="sub">' + todayLabel() + '</div>' +
     '<h2 class="kv" style="margin-top:3px">こんばんは、<br>なにを作ろう？</h2></div>' +
-    '<div class="hero g1 tap" onclick="APP.openRecipe(-1)"><div class="glo"></div><div class="hero-in">' +
+    '<div class="hero g1 tap" onclick="APP.openRecipe(-1)"><div class="glo"></div>' +
+    '<button class="hero-refresh' + (gen.loading ? ' spinning' : '') + '" onclick="event.stopPropagation();APP.generate()" aria-label="いまの在庫で献立を作り直す">' +
+    ic('refresh') + '<span>' + (gen.loading ? '考え中' : '更新') + '</span></button>' +
+    '<div class="hero-in">' +
     '<div style="font-size:11.5px;opacity:.85;font-weight:600">今日の夕食' + (h.savedRecipes.length ? '・AIの提案' : '・見本') + '</div>' +
     '<div style="font-size:20px;font-weight:700;margin:2px 0 6px">' + esc(r.name) + '</div>' +
     '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
@@ -422,16 +425,22 @@ function makeBody() {
 function addStockSheet() {
   const initExp = estimateExpiry('veg', false, 'fridge');
   return '<div style="padding:0 2px"><b style="font-size:18px">食材を追加</b>' +
-    '<div class="sub" style="margin:4px 0 14px">冷蔵庫に足したものを入れてください。</div></div>' +
-    '<label class="fl">名前</label><input id="as-name" class="inp" placeholder="例：キャベツ" oninput="APP.stockGuess(this)" />' +
-    '<div style="display:flex;gap:10px"><div style="flex:1"><label class="fl">量</label><input id="as-qty" class="inp" placeholder="例：1個" /></div>' +
-    '<div style="flex:1"><label class="fl">種類</label><select id="as-cat" class="inp" onchange="APP.stockRecalc()">' +
+    '<div class="sub" style="margin:4px 0 14px">冷蔵・冷凍・常備品に追加できます。</div></div>' +
+    '<label class="fl">名前</label><input id="as-name" class="inp" placeholder="例：キャベツ／オリーブオイル" oninput="APP.stockGuess(this)" />' +
+    '<label class="fl">量（任意）</label><input id="as-qty" class="inp" placeholder="例：1個" />' +
+    '<label class="fl">場所</label><div class="seg" id="as-sec">' +
+    '<button class="on" data-v="fridge" onclick="APP.pickSec(this)">冷蔵</button>' +
+    '<button data-v="freezer" onclick="APP.pickSec(this)">冷凍</button>' +
+    '<button data-v="pantry" onclick="APP.pickSec(this)">常備品</button></div>' +
+    '<div id="as-perishable">' +
+    '<label class="fl">種類</label><select id="as-cat" class="inp" onchange="APP.stockRecalc()">' +
     CATEGORIES.map(c => '<option value="' + c.v + '"' + (c.v === 'veg' ? ' selected' : '') + '>' + c.label + '</option>').join('') +
-    '</select></div></div>' +
-    '<label class="fl">場所</label><div class="seg" id="as-sec"><button class="on" data-v="fridge" onclick="APP.pickSec(this)">冷蔵</button><button data-v="freezer" onclick="APP.pickSec(this)">冷凍</button></div>' +
+    '</select>' +
     '<label class="fl">購入区分</label><div class="seg" id="as-deal"><button class="on" data-v="0" onclick="APP.pickDeal(this)">通常</button><button data-v="1" onclick="APP.pickDeal(this)">おつとめ品</button></div>' +
     '<label class="fl">賞味期限（自動見積り・手で直せます）</label><input id="as-exp" class="inp" type="date" value="' + initExp + '" />' +
     '<div class="sub" style="margin:6px 2px 0;font-size:11.5px;line-height:1.5">キャベツなど期限表示のない食材は、種類と「おつとめ品かどうか」から目安を自動計算します。</div>' +
+    '</div>' +
+    '<div id="as-pantry-note" class="sub" style="display:none;margin:10px 2px 0;font-size:11.5px;line-height:1.5">常備品は「いつも家にあるもの」（調味料・油・米など）。期限管理はせず、切れそうな時だけ通知します。</div>' +
     '<button class="btn primary" style="margin-top:16px" onclick="APP.saveAddStock()">' + ic('plus') + '追加する</button>' +
     '<button class="btn ghost" style="margin-top:10px" onclick="APP.closeSheet()">やめる</button>';
 }
@@ -572,21 +581,22 @@ const APP = {
   },
 
   async generate() {
-    const h = store.hh();
     gen.loading = true; gen.error = '';
-    if (curTab === 'menu') render();
+    render();                                   // 今いる画面のままローディング表示
     try {
-      const recipes = await generateRecipes(buildContext(h), 4);
+      const recipes = await generateRecipes(buildContext(store.hh()), 4);
       if (recipes && recipes.length) { store.saveRecipes(recipes); curRecipes = recipes; }
-      gen.loading = false;
-      if (curTab !== 'menu') { curTab = 'menu'; }
-      render();
-      toast('献立を提案しました');
+      gen.loading = false; render();
+      toast('いまの在庫に合わせて献立を更新しました');
     } catch (e) {
       gen.loading = false;
-      if (String(e.message) === 'NO_KEY') { gen.error = 'APIキーが未設定です。タップして設定すると、AIが在庫と家族に合わせて献立を作ります。'; }
-      else { gen.error = 'AIの呼び出しに失敗しました：' + e.message; }
-      if (curTab !== 'menu') curTab = 'menu';
+      if (String(e.message) === 'NO_KEY') {
+        gen.error = 'APIキーが未設定です。設定から入れると、AIが在庫と家族に合わせて献立を作ります。';
+        toast('APIキーが未設定です');
+      } else {
+        gen.error = 'AIの呼び出しに失敗しました：' + e.message;
+        toast('提案に失敗しました：' + e.message);
+      }
       render();
     }
   },
@@ -619,7 +629,14 @@ const APP = {
 
   // 在庫編集
   openAddStock() { openSheet(addStockSheet()); },
-  pickSec(btn) { document.querySelectorAll('#as-sec button').forEach(b => b.classList.remove('on')); btn.classList.add('on'); APP.stockRecalc(); },
+  pickSec(btn) {
+    document.querySelectorAll('#as-sec button').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    const pantry = btn.dataset.v === 'pantry';
+    const per = q('as-perishable'); if (per) per.style.display = pantry ? 'none' : '';
+    const note = q('as-pantry-note'); if (note) note.style.display = pantry ? '' : 'none';
+    if (!pantry) APP.stockRecalc();
+  },
   pickDeal(btn) { document.querySelectorAll('#as-deal button').forEach(b => b.classList.remove('on')); btn.classList.add('on'); APP.stockRecalc(); },
   stockGuess(inp) { const c = guessCategory(inp.value); const sel = q('as-cat'); if (sel) sel.value = c; APP.stockRecalc(); },
   stockRecalc() {
@@ -634,6 +651,7 @@ const APP = {
     const name = q('as-name').value.trim(); if (!name) { toast('名前を入れてください'); return; }
     const secBtn = sheetEl.querySelector('#as-sec .on');
     const sec = secBtn ? secBtn.dataset.v : 'fridge';
+    if (sec === 'pantry') { store.addPantry(name); closeSheet(); segIndex = 2; render(); toast('常備品に登録しました'); return; }
     store.addStock(name, q('as-qty').value, q('as-exp').value || null, sec);
     closeSheet(); render(); toast('追加しました');
   },
