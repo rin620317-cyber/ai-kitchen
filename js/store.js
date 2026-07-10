@@ -86,6 +86,22 @@ export function save() {
 
 export function getState() { return state; }
 
+// バックアップ：現在のデータをJSON文字列で書き出す。
+export function exportData() { return JSON.stringify(state); }
+
+// 復元：JSON文字列を検証して全データを置き換える。成功でtrue。
+export function importData(str) {
+  let parsed;
+  try { parsed = JSON.parse(str); } catch (e) { return false; }
+  if (!parsed || !Array.isArray(parsed.households) || !parsed.households.length) return false;
+  state = parsed;
+  if (!state.households.some(h => h.id === state.currentHouseholdId)) {
+    state.currentHouseholdId = state.households[0].id;
+  }
+  save();
+  return true;
+}
+
 export function hh() {
   return state.households.find(h => h.id === state.currentHouseholdId) || state.households[0];
 }

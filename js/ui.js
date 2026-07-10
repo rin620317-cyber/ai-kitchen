@@ -372,6 +372,12 @@ function settingsView() {
     '<div style="flex:1"><b style="font-size:14.5px">背景の写真</b>' +
     '<div class="sub">' + (store.bgPhoto() ? '設定済み（家族の写真を薄く表示中）' : '家族の写真などを背景に薄く置けます') + '</div></div>' +
     '<span style="color:var(--faint)">' + ic('right') + '</span></div>' +
+    '<div class="sub" style="margin:18px 2px 8px">データ</div>' +
+    '<div class="card tap" style="display:flex;align-items:center;gap:12px" onclick="APP.openData()">' +
+    '<span style="color:var(--green)">' + ic('database') + '</span>' +
+    '<div style="flex:1"><b style="font-size:14.5px">バックアップ・復元</b>' +
+    '<div class="sub">保存する／別の端末やURLへ移す</div></div>' +
+    '<span style="color:var(--faint)">' + ic('right') + '</span></div>' +
     '<div class="card" style="margin-top:16px;background:var(--green-soft);border:none;color:var(--green-deep);font-size:12.5px;line-height:1.6;font-weight:500">' +
     'この世帯は将来、共有メンバーのスマホと連動できます。ご両親を招待すれば実家の在庫や献立も一緒に管理できます（同期は次の開発ステップ）。</div>' +
     '<div style="text-align:center;color:var(--faint);font-size:11px;margin:18px 0 4px" class="num">AI Kitchen　v' + APP_VERSION + '</div>' +
@@ -597,6 +603,21 @@ function renameSheet() {
     '<button class="btn ghost" style="margin-top:10px" onclick="APP.closeSheet()">やめる</button>';
 }
 
+function dataSheet() {
+  return '<div style="padding:0 2px"><b style="font-size:18px">バックアップ・復元</b>' +
+    '<div class="sub" style="margin:4px 0 14px">データはこの端末（このURL）だけに保存されます。書き出せば、別の端末やURLへ移せます。</div></div>' +
+    '<button class="btn ghost" onclick="APP.exportData()">' + ic('download') + 'バックアップを保存（ファイル）</button>' +
+    '<button class="btn ghost" style="margin-top:10px" onclick="APP.copyData()">' + ic('copy') + 'テキストでコピー</button>' +
+    '<label class="fl" style="margin-top:18px">バックアップから復元</label>' +
+    '<input type="file" id="imp-file" accept=".json,application/json" style="display:none" onchange="APP.importFile(this)" />' +
+    '<button class="btn ghost" onclick="document.getElementById(\'imp-file\').click()">' + ic('upload') + 'ファイルを選んで読み込む</button>' +
+    '<label class="fl">またはテキストを貼り付けて復元</label>' +
+    '<textarea id="imp-text" class="inp" style="height:88px;resize:none" placeholder="バックアップのテキストを貼り付け"></textarea>' +
+    '<button class="btn primary" style="margin-top:10px" onclick="APP.importText()">' + ic('check') + '貼り付けから復元</button>' +
+    '<div class="card soft" style="margin-top:12px;padding:12px 14px;font-size:12px;color:var(--muted);line-height:1.6">復元すると、いまのデータは読み込んだ内容で置き換わります。</div>' +
+    '<button class="btn ghost" style="margin-top:10px" onclick="APP.closeSheet()">とじる</button>';
+}
+
 // ---------- ルーター ----------
 const TABS = ['home', 'stock', 'menu', 'shop'];
 const SCREENS = { home: homeScreen, stock: stockScreen, menu: menuScreen, shop: shopScreen };
@@ -805,6 +826,48 @@ const APP = {
     if (ovEl.firstChild) openOverlay(settingsView(), true);
     render();
     toast('世帯名を変更しました');
+  },
+
+  // バックアップ・復元
+  openData() { openSheet(dataSheet()); },
+  exportData() {
+    try {
+      const blob = new Blob([store.exportData()], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'ai-kitchen-backup.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast('バックアップを保存しました');
+    } catch (e) { toast('保存に失敗しました'); }
+  },
+  copyData() {
+    const txt = store.exportData();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(() => toast('コピーしました（別端末で貼り付け）')).catch(() => toast('コピーできませんでした'));
+    } else { toast('この環境ではコピー不可。ファイル保存をお使いください'); }
+  },
+  importFile(inp) {
+    const f = inp.files && inp.files[0]; inp.value = '';
+    if (!f) return;
+    const rd = new FileReader();
+    rd.onload = () => APP._doImport(String(rd.result));
+    rd.onerror = () => toast('ファイルを読めませんでした');
+    rd.readAsText(f);
+  },
+  importText() {
+    const t = (q('imp-text') || {}).value || '';
+    if (!t.trim()) { toast('テキストを貼り付けてください'); return; }
+    APP._doImport(t);
+  },
+  _doImport(text) {
+    if (store.importData(text)) {
+      closeSheet(); if (ovEl.firstChild) closeOverlay();
+      segIndex = 0; curTab = 'home'; curRecipes = []; gen.error = ''; render();
+      toast('データを復元しました');
+    } else {
+      toast('復元に失敗（データの形式が正しくありません）');
+    }
   },
 
   // 家族編集
