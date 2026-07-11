@@ -244,6 +244,59 @@ export async function extractReceiptItems(imageDataUrl) {
   return runWithRetry(body, (o) => o.items || []);
 }
 
+// 作りたい料理 → 必要な材料と、在庫での過不足（逆引き）。
+const DISHCHECK_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    dish: { type: 'STRING' },
+    serves: { type: 'INTEGER' },
+    ingredients: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          name: { type: 'STRING' },
+          amount: { type: 'STRING' },
+          have: { type: 'BOOLEAN' },
+          where: { type: 'STRING' }
+        },
+        required: ['name', 'amount', 'have', 'where']
+      }
+    }
+  },
+  required: ['dish', 'serves', 'ingredients']
+};
+const DISHCHECK_SYSTEM = [
+  'あなたは料理名から必要な材料を洗い出し、その家庭の在庫での過不足を判定するアシスタントです。',
+  '与えられる情報：作りたい料理名、家族の人数、冷蔵庫の中身、常備品。',
+  'ルール:',
+  '・その料理を「人数」分作るのに必要な材料を、分量(amount)付きで列挙する。',
+  '・各材料が家にあるか判定する：冷蔵庫の中身か常備品に該当すれば have=true、無ければ have=false。',
+  '・whereは "冷蔵" / "常備" / "不足" のいずれか（haveがfalseなら "不足"）。',
+  '・常備品（米・調味料・油・だし等）は基本ある前提で have=true にしてよいが、常備品リストに無く明らかに必要な特殊調味料は have=false にする。',
+  '・名称のゆらぎ（例：豚こま肉と豚肉、ねぎと長ねぎ）は同じ物とみなして判定する。',
+  '・dishは正規化した料理名、servesは想定人数。',
+  '・水・塩・こしょう等のごく基本的な物は列挙しなくてよい。',
+  '・すべて日本語。'
+].join('\n');
+
+export async function checkDishIngredients(dish, context) {
+  const key = effectiveApiKey();
+  if (!key) throw new Error('NO_KEY');
+  const body = {
+    system_instruction: { parts: [{ text: DISHCHECK_SYSTEM }] },
+    contents: [{ role: 'user', parts: [{ text: '作りたい料理:「' + dish + '」\nこの家庭の在庫で、必要な材料と過不足をJSONで出してください。\n' + JSON.stringify(context, null, 2) }] }],
+    generationConfig: {
+      temperature: 0.3,
+      maxOutputTokens: 2048,
+      responseMimeType: 'application/json',
+      responseSchema: DISHCHECK_SCHEMA,
+      thinkingConfig: { thinkingBudget: 0 }
+    }
+  };
+  return runWithRetry(body, (o) => o);
+}
+
 // キー無し・オフライン用の見本献立（スキーマと同形）。
 export const SAMPLE_RECIPES = [
   {

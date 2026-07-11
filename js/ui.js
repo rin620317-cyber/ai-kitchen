@@ -2,7 +2,7 @@
 import { ic } from './icons.js';
 import { todayLabel, clockLabel, ageLabel, birthLabel, expiryInfo, daysUntil, esc, CATEGORIES, guessCategory, estimateExpiry } from './util.js';
 import * as store from './store.js';
-import { buildContext, generateRecipes, extractReceiptItems, SAMPLE_RECIPES } from './api.js';
+import { buildContext, generateRecipes, extractReceiptItems, checkDishIngredients, SAMPLE_RECIPES } from './api.js';
 import { APP_VERSION } from './version.js';
 import * as sync from './sync.js';
 
@@ -18,6 +18,9 @@ let rcptCtx = null;       // レシート抽出結果（確認シート用）
 let overlayIsSettings = false;  // 設定オーバーレイ表示中か（同期反映時の再描画用）
 let sheetIsSync = false;        // 共有シート表示中か
 let useIng = [];                // 「使いたい食材」指定提案で選んだ食材名
+let dishName = '';              // 「作りたい料理の材料チェック」の入力
+let dishBusy = false;           // 材料チェック実行中
+let dishCtx = null;             // 材料チェック結果 {dish, serves, ingredients}
 const reduce = window.matchMedia('(prefers-reduced-motion:reduce)').matches;
 
 const TONE_AV = { green: 'a-green', rose: 'a-rose', amber: 'a-amber' };
@@ -249,8 +252,10 @@ function menuScreen() {
       '<span style="font-size:12.5px">' + esc(gen.error) + '</span></div>' : '') +
     '<button class="btn primary" style="margin:2px 0 10px"' + (gen.loading ? ' disabled' : '') + ' onclick="APP.generate()">' +
     (gen.loading ? spinner() + ' 考えています…' : ic('spark') + ' AIに献立を提案してもらう') + '</button>' +
-    '<button class="btn ghost" style="margin:0 0 18px"' + (gen.loading ? ' disabled' : '') + ' onclick="APP.openUseIng()">' +
+    '<button class="btn ghost" style="margin:0 0 10px"' + (gen.loading ? ' disabled' : '') + ' onclick="APP.openUseIng()">' +
     ic('fridge') + ' 使いたい食材を指定して提案' + '</button>' +
+    '<button class="btn ghost" style="margin:0 0 18px" onclick="APP.openDishCheck()">' +
+    ic('list') + ' 作りたい料理の“足りない物”を調べる' + '</button>' +
     '<div class="sub" style="margin:0 2px 10px">' + (h.savedRecipes.length ? '前回の提案' : '見本の献立') + '</div>' +
     cards + '</div>';
 }
@@ -267,6 +272,36 @@ function ingredientPickSheet() {
     '<label class="fl" style="margin-top:14px">作りたい料理・使いたい食材（自由入力・任意）</label>' +
     '<input id="use-req" class="inp" placeholder="例：豚こまで生姜焼き／麻婆豆腐 が食べたい" />' +
     '<button class="btn primary" style="margin-top:16px"' + (gen.loading ? ' disabled' : '') + ' onclick="APP.generateWithIngredients()">' + ic('spark') + 'この内容で提案してもらう</button>' +
+    '<button class="btn ghost" style="margin-top:10px" onclick="APP.closeSheet()">とじる</button>';
+}
+function dishCheckSheet() {
+  const c = dishCtx;
+  let result = '';
+  if (c) {
+    const miss = c.ingredients.filter(x => !x.have);
+    const have = c.ingredients.filter(x => x.have);
+    result = '<div class="card" style="margin-top:14px;padding:14px 16px">' +
+      '<b style="font-size:15px">' + esc(c.dish) + '</b>' + (c.serves ? '<span class="sub"> ・ ' + c.serves + '人分</span>' : '') +
+      '<div class="sub" style="margin:10px 0 4px;color:var(--danger);font-weight:700">足りない材料（' + miss.length + '）</div>' +
+      (miss.length
+        ? miss.map(x => '<div class="listrow" style="padding:7px 0"><span style="color:var(--danger);flex:0 0 auto">' + ic('alert') + '</span>' +
+          '<div style="flex:1;font-size:14px">' + esc(x.name) + (x.amount ? ' <span class="sub num">' + esc(x.amount) + '</span>' : '') + '</div></div>').join('')
+        : '<div class="sub" style="padding:2px 0 4px">不足なし。いまの在庫で作れます！</div>') +
+      (have.length
+        ? '<div class="sub" style="margin:12px 0 4px">家にある材料（' + have.length + '）</div>' +
+          have.map(x => '<div class="listrow" style="padding:6px 0"><span style="color:var(--green);flex:0 0 auto">' + ic('check2') + '</span>' +
+            '<div style="flex:1;font-size:13.5px;color:var(--muted)">' + esc(x.name) + (x.amount ? ' <span class="num">' + esc(x.amount) + '</span>' : '') + '</div></div>').join('')
+        : '') +
+      '</div>' +
+      (miss.length ? '<button class="btn primary" style="margin-top:12px" onclick="APP.addMissingToShopping()">' + ic('cart') + '足りない' + miss.length + '品を買い物に追加</button>' : '');
+  }
+  return '<div style="padding:0 2px"><b style="font-size:18px">作りたい料理の材料チェック</b>' +
+    '<div class="sub" style="margin:4px 0 14px">作りたい料理を入れると、必要な材料と、いまの在庫で"足りない物"を出します。そのまま買い物リストへ追加できます。</div></div>' +
+    '<label class="fl">作りたい料理</label>' +
+    '<input id="dish-name" class="inp" value="' + esc(dishName) + '" placeholder="例：肉じゃが／カレー／麻婆豆腐" />' +
+    '<button class="btn ' + (c ? 'ghost' : 'primary') + '" style="margin-top:12px"' + (dishBusy ? ' disabled' : '') + ' onclick="APP.runDishCheck()">' +
+    (dishBusy ? spinner() + ' 調べています…' : ic('spark') + (c ? ' 別の料理を調べる' : ' 足りない物を調べる')) + '</button>' +
+    result +
     '<button class="btn ghost" style="margin-top:10px" onclick="APP.closeSheet()">とじる</button>';
 }
 function tagTone(r) {
@@ -876,6 +911,29 @@ const APP = {
     if (!names.length && !req) { toast('食材を選ぶか、作りたい料理を入力してください'); return; }
     closeSheet(); curTab = 'menu';
     APP.runGenerate({ mustUse: names, request: req });
+  },
+  openDishCheck() { dishCtx = null; dishName = ''; dishBusy = false; if (sheetEl.querySelector('.sheet')) closeSheet(); openSheet(dishCheckSheet()); },
+  async runDishCheck() {
+    const name = ((q('dish-name') || {}).value || '').trim();
+    if (!name) { toast('作りたい料理を入れてください'); return; }
+    dishName = name; dishBusy = true; dishCtx = null; openSheet(dishCheckSheet());
+    try {
+      const res = await checkDishIngredients(name, buildContext(store.hh()));
+      dishCtx = { dish: res.dish || name, serves: res.serves || 0, ingredients: (res.ingredients || []) };
+      dishBusy = false; openSheet(dishCheckSheet());
+    } catch (e) {
+      dishBusy = false; openSheet(dishCheckSheet());
+      if (String(e.message) === 'NO_KEY') toast('APIキーが未設定です（設定から入れてください）');
+      else toast('調べられませんでした：' + e.message);
+    }
+  },
+  addMissingToShopping() {
+    if (!dishCtx) return;
+    const miss = dishCtx.ingredients.filter(x => !x.have);
+    if (!miss.length) { toast('不足はありません'); return; }
+    miss.forEach(x => store.addShopping(x.name, 'スーパー'));
+    closeSheet(); curTab = 'shop'; render();
+    toast(miss.length + '品を買い物リストに追加しました');
   },
 
   // 在庫の「作った」更新
